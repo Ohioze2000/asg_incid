@@ -129,7 +129,7 @@ def validate_application_readiness(max_retries=3, delay=5):
         send_slack_alert("DNS Verification Failure", "FAILED", "ALB_DNS_NAME token missing from environment data payload.")
         return False
 
-    url = f"http://{ALB_DNS}"
+    url = f"https://{ALB_DNS}"
     
     # FIXED: Added fallback/retry loop to absorb transient network blips or DNS latency
     for attempt in range(1, max_retries + 1):

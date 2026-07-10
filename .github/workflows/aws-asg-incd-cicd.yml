@@ -60,7 +60,7 @@ jobs:
           echo "ALB_ARN=$(terraform output -raw alb_arn)" >> $GITHUB_OUTPUT
           echo "TARGET_GROUP_ARN=$(terraform output -raw target_group_arn)" >> $GITHUB_OUTPUT
           echo "EC2_SG_ID=$(terraform output -raw ec2_security_group_id)" >> $GITHUB_OUTPUT
-          echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
+          echo "ALB_DNS=$(terraform output -raw alb_dns)" >> $GITHUB_OUTPUT
 
       # --- INFRASTRUCTURE QUALITY GATE (RUNTIME VALIDATION) ---
       - name: Initialize Python Environment
