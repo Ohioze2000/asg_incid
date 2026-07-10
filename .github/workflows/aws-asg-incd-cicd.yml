@@ -1,0 +1,110 @@
+name: "Terraform AWS Deploy"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  terraform:
+    name: "Terraform Cloud Run Engine"
+    runs-on: ubuntu-latest
+    env:
+      # Note: For Remote Execution, AWS credentials and Slack secrets 
+      # should be configured directly in your Terraform Cloud Workspace 
+      # Variable Set to be available during remote runs.
+      TF_CLOUD_ORGANIZATION: "DigitalTech"
+      TF_WORKSPACE: "aws-as"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false # Keeps raw output text completely clean
+
+      # --- PIPELINE INITIALIZATION SLACK ALERT ---
+      - name: Slack Notification - Started
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: 'good'
+          SLACK_MESSAGE: "🚀 Triggered native Terraform Cloud remote run execution."
+          SLACK_TITLE: "Infrastructure Pipeline Status: STARTED"
+
+      - name: Terraform Init
+        run: terraform init
+
+      # On PRs, this triggers a remote 'Speculative Plan' in TFC for review
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -input=false
+
+      # On merge to main, this triggers and executes a native remote Apply in TFC
+      # - name: Terraform Apply
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      #   run: terraform apply -auto-approve -input=false
+
+      # --- CAPTURE INFRASTRUCTURE METADATA FROM TFC STATE ---
+      # Even with remote execution, the local wrapper can query the final state outputs
+      - name: Capture Infrastructure Outputs
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+        id: tf_outputs
+        run: |
+          echo "URL=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
+          echo "ALB_ARN=$(terraform output -raw alb_arn)" >> $GITHUB_OUTPUT
+          echo "TARGET_GROUP_ARN=$(terraform output -raw target_group_arn)" >> $GITHUB_OUTPUT
+          echo "EC2_SG_ID=$(terraform output -raw ec2_security_group_id)" >> $GITHUB_OUTPUT
+          echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_OUTPUT
+
+      # --- INFRASTRUCTURE QUALITY GATE (RUNTIME VALIDATION) ---
+      - name: Initialize Python Environment
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Runtime Verification Dependencies
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+        run: pip install boto3 requests
+
+      # Executes locally on GitHub runner using the infrastructure outputs from TFC
+      - name: Execute Infrastructure Verification Engine
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+        env:
+          # These local secrets are required since this specific script runs inside GitHub Actions
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "us-east-1"
+          ALB_ARN: ${{ steps.tf_outputs.outputs.ALB_ARN }}
+          TARGET_GROUP_ARN: ${{ steps.tf_outputs.outputs.TARGET_GROUP_ARN }}
+          EC2_SECURITY_GROUP_ID: ${{ steps.tf_outputs.outputs.EC2_SG_ID }}
+          ALB_DNS_NAME: ${{ steps.tf_outputs.outputs.ALB_DNS }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ENV_PREFIX: "prod"
+        run: python validate_infra.py
+
+      # --- FINAL PIPELINE SUCCESS NOTIFICATION ---
+      - name: Slack Notification - Success
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: 'good'
+          SLACK_TITLE: "✅ Deployment & Infrastructure Verification SUCCESSFUL"
+          SLACK_MESSAGE: "All quality gate checks passed. Active deployment live at: ${{ steps.tf_outputs.outputs.URL }}"
+
+      # --- COMPREHENSIVE PIPELINE FAILURE NOTIFICATION ---
+      - name: Slack Notification - Failure
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: 'danger'
+          SLACK_MESSAGE: "❌ Infrastructure Provisioning, App Deployment, or Quality Gate Validation FAILED. Inspect GitHub workflow runner logs."
+          SLACK_TITLE: "Infrastructure Pipeline Status: FAILED"

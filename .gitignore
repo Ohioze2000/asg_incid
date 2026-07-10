@@ -1,0 +1,10 @@
+# Terraform local state and backups
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Variables (Where your secrets live)
+*.tfvars
+
+*.md
