@@ -46,9 +46,9 @@ jobs:
         run: terraform plan -input=false
 
       # On merge to main, this triggers and executes a native remote Apply in TFC
-      # - name: Terraform Apply
-      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      #   run: terraform apply -auto-approve -input=false
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -input=false
 
       # --- CAPTURE INFRASTRUCTURE METADATA FROM TFC STATE ---
       # Even with remote execution, the local wrapper can query the final state outputs
