@@ -1,4 +1,3 @@
-#
 name: "Terraform AWS Deploy"
 
 on:
@@ -16,7 +15,7 @@ jobs:
       # should be configured directly in your Terraform Cloud Workspace 
       # Variable Set to be available during remote runs.
       TF_CLOUD_ORGANIZATION: "DigitalTech"
-      TF_WORKSPACE: "aws-as"
+      TF_WORKSPACE: "asg-incid"
 
     steps:
       - name: Checkout Code
