@@ -13,7 +13,7 @@ output "name_servers" {
   value       = data.aws_route53_zone.primary.name_servers
 }
 
-output "alb_hosted_zone_id" {
+output "zone_id" {
   description = "The Route 53 Hosted Zone ID used for record routing."
   value       = data.aws_route53_zone.primary.zone_id
 }

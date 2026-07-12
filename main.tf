@@ -56,7 +56,7 @@ module "my-dns" {
   domain_name  = var.domain_name
   env_prefix   = var.env_prefix
   alb_dns_name = module.my-alb.alb_dns_name
-  alb_zone_id  = module.my-alb.alb_hosted_zone_id
+  alb_zone_id  = module.my-alb.zone_id
 }
 
 locals {

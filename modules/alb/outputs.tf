@@ -8,7 +8,7 @@ output "alb_dns_name" {
   value       = aws_lb.app-alb.dns_name
 }
 
-output "alb_hosted_zone_id" {
+output "alb_zone_id" {
   description = "The AWS-managed hosted zone ID for the ALB. Cleanly maps into your DNS routing module."
   # FIXED: Matches output naming convention to input maps, avoiding schema confusion
   value       = aws_lb.app-alb.zone_id
