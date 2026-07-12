@@ -19,7 +19,7 @@ output "alb_arn" {
 
 output "alb_hosted_zone_id" {
   description = "The Hosted Zone ID of the ALB (for Route 53 alias records)."
-  value       = module.my-alb.zone_id
+  value       = module.my-alb.alb_hosted_zone_id
 }
 
 # --- QUALITY GATE PIPELINE REQUIREMENTS ---
