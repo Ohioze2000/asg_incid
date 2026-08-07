@@ -10,7 +10,7 @@ resource "aws_security_group" "ec2-sg" {
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
-    security_groups = [var.alb_security_group_id]
+    security_groups = [aws_security_group.alb-sg.id]
   }
 
   egress {
@@ -55,10 +55,8 @@ resource "aws_launch_template" "web_server_lt" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.ssh-key.key_name
 
-  network_interfaces {
-    associate_public_ip_address = false
-    security_groups             = [aws_security_group.ec2-sg.id]
-  }
+  # Moved top-level for clean ASG interface binding
+  vpc_security_group_ids = [aws_security_group.ec2-sg.id]
 
   iam_instance_profile {
     name = var.iam_instance_profile_name
@@ -107,7 +105,7 @@ resource "aws_autoscaling_group" "web_asg" {
     preferences {
       min_healthy_percentage = 50
     }
-    triggers = ["tag"]
+    triggers = ["tag", "launch_template"]
   }
 
   tag {

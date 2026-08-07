@@ -1,4 +1,4 @@
-#
+
 name: "Terraform AWS Deploy"
 
 on:
@@ -41,15 +41,15 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # # On PRs, this triggers a remote 'Speculative Plan' in TFC for review
-      # - name: Terraform Plan
-      #   if: github.event_name == 'pull_request'
-      #   run: terraform plan -input=false
+      # On PRs, this triggers a remote 'Speculative Plan' in TFC for review
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -input=false
 
       # On merge to main, this triggers and executes a native remote Apply in TFC
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform destroy -auto-approve
+        run: terraform apply -auto-approve -input=false 
 
       # --- CAPTURE INFRASTRUCTURE METADATA FROM TFC STATE ---
       # Even with remote execution, the local wrapper can query the final state outputs
