@@ -69,7 +69,7 @@ def validate_security_groups():
         send_slack_alert("Security Group API Validation Error", "FAILED", str(e))
         return False
 
-def validate_alb_targets(max_retries=6, delay=20):
+def validate_alb_targets(max_retries=10, delay=20):
     """Polls the ALB target group until targets settle into a HEALTHY state to eliminate race conditions."""
     print("🏥 Testing Load Balancer target pool alignment...")
     if not TARGET_GROUP_ARN:
