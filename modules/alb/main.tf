@@ -48,7 +48,7 @@ resource "aws_lb_target_group" "app-tg" {
     path                = "/"
     protocol            = "HTTP"
     port                = "traffic-port"
-    matcher             = "200, 301,302"
+    matcher             = "200,301,302"
     interval            = 15
     timeout             = 5
     healthy_threshold   = 2
