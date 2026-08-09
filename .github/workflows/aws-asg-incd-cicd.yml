@@ -15,7 +15,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: "us-east-1"
       TF_CLOUD_ORGANIZATION: "DigitalTech"
-      TF_WORKSPACE: "aws-asg-webapp-prod"
+      TF_WORKSPACE: "asg-incid"
       SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
