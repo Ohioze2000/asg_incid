@@ -112,7 +112,6 @@ resource "aws_autoscaling_group" "web_asg" {
     preferences {
       min_healthy_percentage = 50
     }
-    triggers = ["tag", "launch_template"]
   }
 
   tag {

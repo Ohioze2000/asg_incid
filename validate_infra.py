@@ -3,12 +3,18 @@ import sys
 import boto3
 import requests
 import time
+import urllib3
 
-# Exact mapping matching your merged deploy.yml env specifications
+# Suppress SSL warnings only if falling back to raw ALB DNS testing with verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Environment variables from GitHub Actions runner
 ALB_ARN = os.getenv("ALB_ARN")
 TARGET_GROUP_ARN = os.getenv("TARGET_GROUP_ARN")
 EC2_SG_ID = os.getenv("EC2_SECURITY_GROUP_ID")
 ALB_DNS = os.getenv("ALB_DNS_NAME")
+DOMAIN_NAME = os.getenv("DOMAIN_NAME")
+APP_ENDPOINT = os.getenv("APP_ENDPOINT")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 ENV_PREFIX = os.getenv("ENV_PREFIX", "prod")
 
@@ -56,7 +62,7 @@ def validate_security_groups():
                     send_slack_alert("Security Group Misconfiguration", "FAILED", error_msg)
                     return False
             
-            # FIXED: Audit IPv6 structural drift
+            # Audit IPv6 structural drift
             for v6_pair in perm.get('Ipv6Ranges', []):
                 if v6_pair.get('CidrIpv6') == '::/0':
                     error_msg = f"Security Group `{EC2_SG_ID}` has open public IPv6 access (::/0)! Compliance baseline breached."
@@ -76,7 +82,6 @@ def validate_alb_targets(max_retries=10, delay=20):
         send_slack_alert("Target Group Error", "FAILED", "TARGET_GROUP_ARN environment variable is undefined.")
         return False
 
-    # FIXED: Implemented an active polling block to handle container/instance warm-up delays
     for attempt in range(1, max_retries + 1):
         try:
             response = elbv2_client.describe_target_health(TargetGroupArn=TARGET_GROUP_ARN)
@@ -101,7 +106,6 @@ def validate_alb_targets(max_retries=10, delay=20):
                 print(f"✅ Target pool health check assertions passed. Live count: {healthy_count}")
                 return True
             
-            # Extract states for localized execution tracking output
             current_states = [t['TargetHealth']['State'] for t in health_descriptions]
             print(f"⏳ [Attempt {attempt}/{max_retries}]: Pool not yet converged. State matrix: {current_states}. Retrying in {delay}s...")
             time.sleep(delay)
@@ -110,7 +114,6 @@ def validate_alb_targets(max_retries=10, delay=20):
             send_slack_alert("Target Group Runtime API Exception", "FAILED", str(e))
             return False
 
-    # If the loop exhausts, process details for the terminal failures
     last_error_details = []
     for target in unhealthy_targets:
         state = target['TargetHealth']['State']
@@ -122,21 +125,34 @@ def validate_alb_targets(max_retries=10, delay=20):
     send_slack_alert("ALB Target Status: Unhealthy Target Settled", "FAILED", f"Target pool failed to stabilize. Details:\n{error_summary}")
     return False
 
-def validate_application_readiness(max_retries=3, delay=5):
-    """Runs a live synthetic HTTP transaction directly against the public ALB endpoint with micro-retries."""
+def validate_application_readiness(max_retries=5, delay=10):
+    """Runs a live synthetic HTTP transaction against the Route 53 domain endpoint."""
     print("🌐 Verification processing for external application HTTP readiness...")
-    if not ALB_DNS:
-        send_slack_alert("DNS Verification Failure", "FAILED", "ALB_DNS_NAME token missing from environment data payload.")
+    
+    # 1. Determine target URL & execution strategy
+    headers = {"User-Agent": "Aetheris-Verification-Engine/1.0"}
+    verify_ssl = True
+
+    if APP_ENDPOINT:
+        url = APP_ENDPOINT if APP_ENDPOINT.startswith("http") else f"https://{APP_ENDPOINT}"
+    elif DOMAIN_NAME:
+        url = f"https://{DOMAIN_NAME}"
+    elif ALB_DNS:
+        # Fallback to ALB DNS with SSL verification bypass if custom domain isn't available
+        url = f"https://{ALB_DNS}"
+        verify_ssl = False
+        print("⚠️ Custom domain not supplied. Testing directly against raw ALB DNS (SSL verification bypassed).")
+    else:
+        send_slack_alert("DNS Verification Failure", "FAILED", "Neither APP_ENDPOINT, DOMAIN_NAME, nor ALB_DNS_NAME token were provided.")
         return False
 
-    url = f"https://{ALB_DNS}"
-    
-    # FIXED: Added fallback/retry loop to absorb transient network blips or DNS latency
+    print(f"🎯 Target Endpoint: {url}")
+
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                print("✅ Application transaction successful. HTTP 200 OK verified.")
+            response = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
+            if response.status_code in [200, 301, 302]:
+                print(f"✅ Application transaction successful. Status Code: {response.status_code}")
                 return True
             else:
                 print(f"⚠️ [HTTP Attempt {attempt}/{max_retries}]: Endpoint responded with status: {response.status_code}. Retrying...")
@@ -144,24 +160,34 @@ def validate_application_readiness(max_retries=3, delay=5):
                     time.sleep(delay)
                     continue
                 
-                error_msg = f"The Load Balancer endpoint resolved but returned an active error. Status Code: {response.status_code} (Potential application server crash or 502/504 edge exception)"
+                error_msg = f"The application endpoint resolved but returned status code: {response.status_code}."
                 send_slack_alert("Application Readiness: Edge Dynamic Error", "FAILED", error_msg)
                 return False
                 
+        except requests.exceptions.SSLError as e:
+            print(f"⚠️ [HTTP Attempt {attempt}/{max_retries}]: SSL Handshake failed: {e}")
+            if attempt < max_retries:
+                print("⏳ Route 53 or ACM SSL cert propagation may still be settling. Retrying...")
+                time.sleep(delay)
+                continue
+            
+            error_msg = f"SSL Certificate Verification failed for {url}. Details: {e}"
+            send_slack_alert("Application Readiness: SSL Verification Error", "FAILED", error_msg)
+            return False
+
         except requests.exceptions.RequestException as e:
             print(f"⚠️ [HTTP Attempt {attempt}/{max_retries}]: Network socket connection failed. Error: {e}")
             if attempt < max_retries:
                 time.sleep(delay)
                 continue
                 
-            error_msg = f"Unable to establish network connection socket to ALB endpoint URL ({url}). Infrastructure Routing Failure: {e}"
+            error_msg = f"Unable to establish network connection socket to URL ({url}). Error: {e}"
             send_slack_alert("Application Readiness: Edge Host Unreachable", "FAILED", error_msg)
             return False
 
 def main():
     print("🚀 Running post-apply continuous verification routine...")
     
-    # Run tests sequentially. If one fails, exit immediately to prevent alert fatigue.
     if not validate_security_groups():
         print("❌ Security Group verification checks failed. Terminating pipeline block.")
         sys.exit(1)

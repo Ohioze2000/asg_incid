@@ -20,10 +20,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
           terraform_wrapper: false # Keeps raw output text completely clean
@@ -58,6 +58,7 @@ jobs:
         id: tf_outputs
         run: |
           echo "URL=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
+          echo "DOMAIN_NAME=$(terraform output -raw domain_name)" >> $GITHUB_OUTPUT
           echo "ALB_ARN=$(terraform output -raw alb_arn)" >> $GITHUB_OUTPUT
           echo "TARGET_GROUP_ARN=$(terraform output -raw target_group_arn)" >> $GITHUB_OUTPUT
           echo "EC2_SG_ID=$(terraform output -raw ec2_security_group_id)" >> $GITHUB_OUTPUT
@@ -66,7 +67,7 @@ jobs:
       # --- INFRASTRUCTURE QUALITY GATE (RUNTIME VALIDATION) ---
       - name: Initialize Python Environment
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.4.0
         with:
           python-version: '3.11'
 
@@ -82,6 +83,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: "us-east-1"
+          DOMAIN_NAME: ${{ steps.tf_outputs.outputs.DOMAIN_NAME }}
+          APP_ENDPOINT: ${{ steps.tf_outputs.outputs.URL }}
           ALB_ARN: ${{ steps.tf_outputs.outputs.ALB_ARN }}
           TARGET_GROUP_ARN: ${{ steps.tf_outputs.outputs.TARGET_GROUP_ARN }}
           EC2_SECURITY_GROUP_ID: ${{ steps.tf_outputs.outputs.EC2_SG_ID }}

@@ -86,6 +86,11 @@ output "validated_certificate_arn" {
   value       = aws_acm_certificate_validation.cert_validation.certificate_arn
 }
 
+output "domain_name" {
+  description = "The custom domain name for the application"
+  value       = var.domain_name
+}
+
 # ==============================================================================
 # --- Monitoring ---
 # ==============================================================================

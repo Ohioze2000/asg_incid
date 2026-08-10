@@ -13,10 +13,7 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# ==========================================
-# CORE NETWORKING & SECURITY
-# ==========================================
-
+# 1. VPC configuration
 resource "aws_vpc" "my-vpc" {
   cidr_block           = var.vpc_cidr_block
   enable_dns_hostnames = true
@@ -27,6 +24,7 @@ resource "aws_vpc" "my-vpc" {
   }
 }
 
+# 2. Networking Module
 module "my-network" {
   source         = "./modules/network"
   vpc_id         = aws_vpc.my-vpc.id
@@ -35,22 +33,13 @@ module "my-network" {
   vpc_cidr_block = var.vpc_cidr_block
 }
 
-module "ec2_ssm_role-iam" {
-  source                    = "./modules/iam"
-  env_prefix                = var.env_prefix
-  iam_instance_profile_name = "${var.env_prefix}-ec2-ssm-instance-profile"
-}
-
-# ==========================================
-# PUBLIC INGRESS & DOMAIN MANAGEMENT
-# ==========================================
-
+# 3. SSL Module
 module "my-ssl" {
   source      = "./modules/ssl"
   domain_name = var.domain_name
 }
 
-# FIXED CYCLE STEP 1: Core Domain Zone resolution must run independent of ALB instantiation
+# 4. DNS Module
 module "my-dns" {
   source       = "./modules/dns"
   domain_name  = var.domain_name
@@ -59,34 +48,33 @@ module "my-dns" {
   alb_zone_id  = module.my-alb.alb_hosted_zone_id
 }
 
-locals {
-  root_cert_validation_records = {
+# 5. Route53 Validation Records (Fixed key structure to prevent map duplication)
+resource "aws_route53_record" "cert_validation_root" {
+  for_each = {
     for dvo in module.my-ssl.domain_validation_options : dvo.domain_name => {
       name    = dvo.resource_record_name
-      type    = dvo.resource_record_type
       record  = dvo.resource_record_value
-      zone_id = module.my-dns.zone_id 
+      type    = dvo.resource_record_type
+      zone_id = module.my-dns.zone_id
     }
   }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = each.value.zone_id
 }
 
-resource "aws_route53_record" "cert_validation_root" {
-  for_each = local.root_cert_validation_records
-
-  zone_id = each.value.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 60
-  records = [each.value.record]
-}
-
-# FIXED CYCLE STEP 2: Certification state validation blocks execution down to ALB module
+# 6. ACM Certificate Validation
 resource "aws_acm_certificate_validation" "cert_validation" {
   certificate_arn         = module.my-ssl.certificate_arn
   validation_record_fqdns = [for rec in aws_route53_record.cert_validation_root : rec.fqdn]
 }
 
-# FIXED CYCLE STEP 3: ALB takes validated certificate ARN. Implicit dependency handles sequencing.
+# 7. Application Load Balancer
+# Uses certificate_arn directly from my-ssl to break circular dependency
 module "my-alb" {
   source          = "./modules/alb"
   env_prefix      = var.env_prefix
@@ -95,10 +83,35 @@ module "my-alb" {
   certificate_arn = aws_acm_certificate_validation.cert_validation.certificate_arn 
 }
 
-# ==========================================
-# COMPUTE & RUNTIME ORCHESTRATION
-# ==========================================
+# 8. IAM Role Module
+module "ec2_ssm_role-iam" {
+  source                    = "./modules/iam"
+  env_prefix                = var.env_prefix
+  iam_instance_profile_name = "${var.env_prefix}-ec2-ssm-instance-profile"
+}
 
+# locals {
+#   root_cert_validation_records = {
+#     for dvo in module.my-ssl.domain_validation_options : dvo.domain_name => {
+#       name    = dvo.resource_record_name
+#       type    = dvo.resource_record_type
+#       record  = dvo.resource_record_value
+#       zone_id = module.my-dns.zone_id 
+#     }
+#   }
+# }
+
+# resource "aws_route53_record" "cert_validation_root" {
+#   for_each = local.root_cert_validation_records
+
+#   zone_id = each.value.zone_id
+#   name    = each.value.name
+#   type    = each.value.type
+#   ttl     = 60
+#   records = [each.value.record]
+# }
+
+# 9. Compute / Webserver Module
 module "my-server" {
   source                    = "./modules/webserver"
   vpc_id                    = aws_vpc.my-vpc.id
@@ -116,10 +129,7 @@ module "my-server" {
   min_size                  = var.min_size
 }
 
-# ==========================================
-# OBSERVABILITY & SIGNALING
-# ==========================================
-
+# 10. Monitoring Module
 module "my-monitoring" {
   source            = "./modules/monitoring"
   env_prefix        = var.env_prefix
