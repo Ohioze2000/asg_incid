@@ -1,101 +1,109 @@
 # ==============================================================================
-# --- Load Balancer Outputs ---
+# LOAD BALANCER OUTPUTS
 # ==============================================================================
 
-output "alb_dns" {
-  description = "The DNS name of the Application Load Balancer."
-  value       = module.my-alb.alb_dns_name
-}
-
-output "website_url" {
-  description = "The HTTPS URL of the deployed website."
-  value       = "https://${var.domain_name}"
+output "alb_dns_name" {
+  description = "The DNS name of the Application Load Balancer"
+  value       = module.alb.alb_dns_name
 }
 
 output "alb_arn" {
-  description = "The ARN of the Application Load Balancer."
-  value       = module.my-alb.alb_arn
+  description = "The ARN of the Application Load Balancer"
+  value       = module.alb.alb_arn
 }
 
-output "alb_hosted_zone_id" {
-  description = "The Hosted Zone ID of the ALB (for Route 53 alias records)."
-  value       = module.my-alb.alb_hosted_zone_id
+output "alb_zone_id" {
+  description = "Hosted zone ID of the ALB for Route 53 alias records"
+  value       = module.alb.alb_zone_id
 }
 
-# --- QUALITY GATE PIPELINE REQUIREMENTS ---
 output "target_group_arn" {
-  description = "The ARN of the target group to verify instance health states in our Python Quality Gate."
-  value       = module.my-alb.target_group_arn  # Assumes your ALB module exposes its target group ARN
+  description = "Target group ARN used by Quality Gate verification pipelines"
+  value       = module.alb.target_group_arn
+}
+
+output "website_url" {
+  description = "Full HTTPS endpoint URL for the application"
+  value       = "https://${var.domain_name}"
 }
 
 # ==============================================================================
-# --- Compute / Auto Scaling Outputs ---
+# COMPUTE OUTPUTS
 # ==============================================================================
 
 output "asg_name" {
-  description = "The name of the Auto Scaling Group managing the web servers."
-  value       = module.my-server.asg_name
+  description = "Name of the web server Auto Scaling Group"
+  value       = module.webserver.asg_name
 }
 
-# --- QUALITY GATE PIPELINE REQUIREMENTS ---
 output "ec2_security_group_id" {
-  description = "The security group attached to the EC2 instances to check for compliance rule drift."
-  value       = module.my-server.ec2_security_group_id # Assumes your compute module exposes the backend SG ID
+  description = "Security group ID assigned to EC2 compute nodes"
+  value       = module.webserver.ec2_security_group_id
 }
 
 # ==============================================================================
-# --- Network Outputs ---
+# NETWORKING OUTPUTS
 # ==============================================================================
 
 output "vpc_id" {
-  description = "The ID of the created VPC."
-  value       = aws_vpc.my-vpc.id
+  description = "The ID of the provisioned VPC"
+  value       = aws_vpc.main.id
 }
 
 output "public_subnet_ids" {
-  description = "IDs of the public subnets."
-  value       = module.my-network.public_subnet_ids
+  description = "List of public subnet IDs"
+  value       = module.network.public_subnet_ids
 }
 
 output "private_subnet_ids" {
-  description = "IDs of the private subnets."
-  value       = module.my-network.private_subnet_ids
+  description = "List of private subnet IDs"
+  value       = module.network.private_subnet_ids
 }
 
 # ==============================================================================
-# --- DNS & SSL Outputs ---
+# DNS & SECURITY OUTPUTS
 # ==============================================================================
 
 output "route53_zone_id" {
-  description = "The ID of the Route 53 Hosted Zone."
-  value       = module.my-dns.zone_id
+  description = "The ID of the Route 53 Hosted Zone"
+  value       = module.dns.zone_id
 }
 
 output "route53_zone_name" {
-  description = "The name of the Route 53 Hosted Zone."
-  value       = module.my-dns.zone_name
+  description = "The domain name managed by Route 53"
+  value       = module.dns.zone_name
 }
 
 output "name_servers" {
-  description = "DNS Name Servers for the registrar."
-  value       = module.my-dns.name_servers
+  description = "Nameservers assigned to the Route 53 zone"
+  value       = module.dns.name_servers
 }
 
 output "validated_certificate_arn" {
-  description = "The ARN of the validated ACM certificate."
+  description = "ARN of the validated ACM SSL Certificate"
   value       = aws_acm_certificate_validation.cert_validation.certificate_arn
 }
 
-output "domain_name" {
-  description = "The custom domain name for the application"
-  value       = var.domain_name
-}
-
 # ==============================================================================
-# --- Monitoring ---
+# MONITORING & OBSERVABILITY OUTPUTS
 # ==============================================================================
 
 output "cloudwatch_alarms_topic_arn" {
-  description = "ARN of the SNS topic for CloudWatch alarms."
-  value       = module.my-monitoring.cloudwatch_alarms_topic_arn
+  description = "ARN of the SNS topic for CloudWatch alarms"
+  value       = module.monitoring.cloudwatch_alarms_topic_arn
+}
+
+output "log_group_names" {
+  description = "Map of created log group names"
+  value       = module.logging.log_group_names
+}
+
+output "log_group_arns" {
+  description = "Map of created log group ARNs"
+  value       = module.logging.log_group_arns
+}
+
+output "app_alarm_arns" {
+  description = "Map of created application metric alarm ARNs"
+  value       = module.logging.alarm_arns
 }

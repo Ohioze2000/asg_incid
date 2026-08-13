@@ -1,51 +1,85 @@
-resource "aws_security_group" "alb-sg" {
+# ==============================================================================
+# SECURITY GROUP & FIREWALL RULES
+# ==============================================================================
+
+resource "aws_security_group" "alb_sg" {
   name        = "${var.env_prefix}-alb-sg"
-  description = "Allow HTTP/HTTPS traffic"
+  description = "Allow inbound HTTP and HTTPS traffic to the Application Load Balancer"
   vpc_id      = var.vpc_id
 
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-alb-sg"
+    }
+  )
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  lifecycle {
+    create_before_destroy = true
   }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "${var.env_prefix}-alb-sg" }
 }
 
-resource "aws_lb" "app-alb" {
-  # FIXED: Converted to lowercase to comply with AWS validation constraints
+resource "aws_vpc_security_group_ingress_rule" "alb_http_ingress" {
+  security_group_id = aws_security_group.alb_sg.id
+  description       = "Allow inbound HTTP traffic"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_https_ingress" {
+  security_group_id = aws_security_group.alb_sg.id
+  description       = "Allow inbound HTTPS traffic"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_allow_all_egress" {
+  security_group_id = aws_security_group.alb_sg.id
+  description       = "Allow all outbound traffic from ALB to targets"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# ==============================================================================
+# APPLICATION LOAD BALANCER
+# ==============================================================================
+
+resource "aws_lb" "app_alb" {
   name               = "${var.env_prefix}-app-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb-sg.id]
-  subnets            = var.subnet_ids 
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = var.subnet_ids
 
-  tags = { Name = "${var.env_prefix}-app-alb" }
+  drop_invalid_header_fields = true
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-app-alb"
+    }
+  )
 }
 
-resource "aws_lb_target_group" "app-tg" {
-  name     = "${var.env_prefix}-app-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
+# ==============================================================================
+# TARGET GROUP
+# ==============================================================================
+
+resource "aws_lb_target_group" "app_tg" {
+  name                 = "${var.env_prefix}-app-tg"
+  port                 = 80
+  protocol             = "HTTP"
+  vpc_id               = var.vpc_id
+  target_type          = "instance"
+  deregistration_delay = 30
 
   health_check {
-    path                = "/"
+    enabled             = true
+    path                = var.health_check_path
     protocol            = "HTTP"
     port                = "traffic-port"
     matcher             = "200,301,302"
@@ -55,26 +89,53 @@ resource "aws_lb_target_group" "app-tg" {
     unhealthy_threshold = 2
   }
 
-  tags = { Name = "${var.env_prefix}-app-tg" }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-app-tg"
+    }
+  )
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-resource "aws_lb_listener" "http_redirect" {
-  load_balancer_arn = aws_lb.app-alb.arn
+# ==============================================================================
+# LISTENERS
+# ==============================================================================
+
+# HTTP Listener: Forwards to Target Group if no ACM cert provided; otherwise redirects to HTTPS
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.app_alb.arn
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+  dynamic "default_action" {
+    for_each = var.certificate_arn != "" ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = var.certificate_arn == "" ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.app_tg.arn
     }
   }
 }
 
+# HTTPS Listener: Created conditionally when an ACM Certificate ARN is passed
 resource "aws_lb_listener" "https" {
-  load_balancer_arn = aws_lb.app-alb.arn
+  count             = var.certificate_arn != "" ? 1 : 0
+  load_balancer_arn = aws_lb.app_alb.arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -82,6 +143,6 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app-tg.arn
+    target_group_arn = aws_lb_target_group.app_tg.arn
   }
 }

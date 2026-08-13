@@ -3,18 +3,23 @@
 # ==============================================================================
 
 resource "aws_sns_topic" "cloudwatch_alarms_topic" {
-  name         = "${var.env_prefix}-cloudwatch-alarms"
-  display_name = "${var.env_prefix} CloudWatch Alarms"
+  name              = "${var.env_prefix}-cloudwatch-alarms"
+  display_name      = "${var.env_prefix} CloudWatch Alarms"
+  kms_master_key_id = var.sns_kms_key_id
 
-  tags = {
-    Name = "${var.env_prefix}-cloudwatch-alarms"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-cloudwatch-alarms"
+    }
+  )
 }
 
 resource "aws_sns_topic_subscription" "email_subscription" {
+  count     = var.alert_email != "" ? 1 : 0
   topic_arn = aws_sns_topic.cloudwatch_alarms_topic.arn
   protocol  = "email"
-  endpoint  = "ohiozeberyl2000@gmail.com" 
+  endpoint  = var.alert_email
 }
 
 # ==============================================================================
@@ -24,16 +29,17 @@ resource "aws_sns_topic_subscription" "email_subscription" {
 resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
   alarm_name          = "${var.env_prefix}-ASG-High-CPU-Utilization"
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = var.cpu_evaluation_periods
+  datapoints_to_alarm = var.cpu_datapoints_to_alarm
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
-  period              = 300 
+  period              = var.cpu_alarm_period
   statistic           = "Average"
-  threshold           = 80 
-  alarm_description   = "Alarm when average CPU utilization across the ASG exceeds 80%"
+  threshold           = var.cpu_alarm_threshold
+  alarm_description   = "Alarm when average CPU utilization across Auto Scaling Group '${var.asg_name}' exceeds ${var.cpu_alarm_threshold}%"
   actions_enabled     = true
+  treat_missing_data  = "missing"
 
-  # FIXED: Cleaned up map closure and consolidated actions to the main topic
   dimensions = {
     AutoScalingGroupName = var.asg_name
   }
@@ -41,16 +47,18 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
   alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]
   ok_actions    = [aws_sns_topic.cloudwatch_alarms_topic.arn]
 
-  tags = {
-    Name = "${var.env_prefix}-ASG-High-CPU-Alarm"
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-ASG-High-CPU-Alarm"
+    }
+  )
 }
 
 # ==============================================================================
 # 3. PROACTIVE AUTOMATED REMEDIATION ENGINE (LAMBDA & COMPONENT HOOKS)
 # ==============================================================================
 
-# IAM Execution Role for the Remediation Lambda
 resource "aws_iam_role" "lambda_remediation_role" {
   name = "${var.env_prefix}-lambda-remediation-role"
 
@@ -66,15 +74,15 @@ resource "aws_iam_role" "lambda_remediation_role" {
       }
     ]
   })
+
+  tags = var.tags
 }
 
-# Attaching AWS Managed Basic Execution policy for basic logging
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   role       = aws_iam_role.lambda_remediation_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Inline Remediation Engine Permissions (Heal ASG, Quarantine and Tag EC2s)
 resource "aws_iam_role_policy" "lambda_remediation_permissions" {
   name = "${var.env_prefix}-lambda-remediation-permissions"
   role = aws_iam_role.lambda_remediation_role.id
@@ -86,25 +94,43 @@ resource "aws_iam_role_policy" "lambda_remediation_permissions" {
         Effect = "Allow"
         Action = [
           "elasticloadbalancing:DescribeTargetHealth",
-          "autoscaling:DetachInstances",
           "autoscaling:DescribeAutoScalingGroups",
-          "ec2:CreateTags",
           "ec2:DescribeInstances"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "autoscaling:DetachInstances"
+        ]
+        Resource = "*" # Scoped down by ASG ARN if available
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateTags"
+        ]
+        Resource = "arn:aws:ec2:*:*:instance/*"
       }
     ]
   })
 }
 
-# Package the python script zip file automatically
+# Explicit Log Group management to prevent unexpiring CloudWatch logs
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  name              = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
+  retention_in_days = var.log_retention_in_days
+
+  tags = var.tags
+}
+
 data "archive_file" "lambda_zip" {
   type        = "zip"
   source_file = "${path.module}/lambda_function.py"
   output_path = "${path.module}/lambda_function.zip"
 }
 
-# The Remediation Engine Lambda Function
 resource "aws_lambda_function" "incident_remediation_engine" {
   filename         = data.archive_file.lambda_zip.output_path
   function_name    = "${var.env_prefix}-incident-remediation-engine"
@@ -121,16 +147,23 @@ resource "aws_lambda_function" "incident_remediation_engine" {
       ASG_NAME          = var.asg_name
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.lambda_log_group]
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-incident-remediation-engine"
+    }
+  )
 }
 
-# The Subscription Bridge: Connects the CloudWatch Alarm Topic to Lambda
 resource "aws_sns_topic_subscription" "lambda_remediation_subscriber" {
   topic_arn = aws_sns_topic.cloudwatch_alarms_topic.arn
   protocol  = "lambda"
   endpoint  = aws_lambda_function.incident_remediation_engine.arn
 }
 
-# Explicitly grant SNS authority to invoke your self-healing function
 resource "aws_lambda_permission" "allow_sns_invocation" {
   statement_id  = "AllowExecutionFromSNS"
   action        = "lambda:InvokeFunction"

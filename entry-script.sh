@@ -1,140 +1,100 @@
 #!/bin/bash
-# Update your package index
-sudo apt-get update
-#Install required packages
-sudo apt-get install \
+set -euo pipefail
+
+# ==============================================================================
+# LOGGING SETUP
+# ==============================================================================
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+echo "======================================================================"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting EC2 User Data Bootstrap Process"
+echo "======================================================================"
+
+# Non-interactive apt configuration
+export DEBIAN_FRONTEND=noninteractive
+
+# ==============================================================================
+# 1. SYSTEM UPDATES & DEPENDENCY INSTALLATION
+# ==============================================================================
+echo "[INFO] Updating package index and installing dependencies..."
+sudo apt-get update -y
+sudo apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
-    lsb-release -y
-#Add Docker’s official GPG key
+    lsb-release \
+    unzip \
+    wget
+
+# ==============================================================================
+# 2. DOCKER ENGINE INSTALLATION
+# ==============================================================================
+echo "[INFO] Configuring Docker official repository..."
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-#Set up the Docker repository
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+
 echo \
-  "deb [arch=$(dpkg --print-architecture) \
-  signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-#Update the package index again
-sudo apt-get update
-#Install unzip
-sudo apt-get install unzip
-#Install Docker Engine
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-#Allow your user to run Docker without sudo
-sudo usermod -aG docker ubuntu
-#Pull webcontent from github repository
-wget https://github.com/Ohioze2000/estate-agency/raw/refs/heads/main/estate-agency.zip
-#Unzip the web content
-unzip estate-agency.zip
-#CD to estate-agency
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update -y
+
+echo "[INFO] Installing Docker components..."
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Grant default Ubuntu user access to Docker daemon
+sudo usermod -aG docker ubuntu || true
+
+# ==============================================================================
+# 3. APPLICATION CONTAINERIZATION & DEPLOYMENT
+# ==============================================================================
+echo "[INFO] Fetching web content and building Docker image..."
+APP_DIR="/opt/estate-agency"
+sudo mkdir -p "${APP_DIR}"
+cd "${APP_DIR}"
+
+sudo wget -q https://github.com/Ohioze2000/estate-agency/raw/refs/heads/main/estate-agency.zip
+sudo unzip -o estate-agency.zip
 cd estate-agency
-#Build docker image
+
+echo "[INFO] Building and starting Docker application container..."
 sudo docker build -t estate-agency .
-#Run docker container
-sudo docker run -d -p 80:80 estate-agency
-#CloudWatch Agent Installation
-echo "Starting CloudWatch Agent installation..."
-#Download the CloudWatch Agent package
-wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
-#Install the CloudWatch Agent
+sudo docker run -d --name estate-agency-app --restart always -p 80:80 estate-agency
+
+# ==============================================================================
+# 4. CLOUDWATCH AGENT INSTALLATION & STARTUP
+# ==============================================================================
+echo "[INFO] Installing AWS CloudWatch Agent..."
+wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
 sudo dpkg -i /tmp/amazon-cloudwatch-agent.deb
-#Clean up the downloaded package
-rm /tmp/amazon-cloudwatch-agent.deb
+rm -f /tmp/amazon-cloudwatch-agent.deb
 
-echo "CloudWatch Agent installed."
+echo "[INFO] Checking for decoupled CloudWatch configuration..."
+CWA_CONFIG_FILE="/opt/aws/amazon-cloudwatch-agent/bin/config.json"
 
-#CloudWatch Agent Configuration
+# Option A: Local file rendered via Terraform user_data / templatefile
+# Option B: Downloaded dynamically from AWS SSM Parameter Store if file does not exist locally
+if [ ! -f "${CWA_CONFIG_FILE}" ]; then
+    echo "[WARN] Local config file ${CWA_CONFIG_FILE} not present. Attempting to fetch from SSM..."
+    # If using SSM Parameter Store, uncomment line below:
+    # sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:/asg-webserver/cloudwatch-agent-config -s
+fi
 
-cat <<'EOF' | sudo tee /opt/aws/amazon-cloudwatch-agent/bin/config.json
-{
-  "agent": {
-    "metrics_collection_interval": 60,
-    "run_as_user": "root"
-  },
-  "metrics": {
-    "metrics_collected": {
-      "cpu": {
-        "metrics_collection_interval": 60,
-        "resources": [
-          "*"
-        ],
-        "totalcpu": true
-      },
-      "disk": {
-        "metrics_collection_interval": 60,
-        "resources": [
-          "/"
-        ],
-        "measurement": [
-          "used_percent",
-          "inodes_free"
-        ]
-      },
-      "mem": {
-        "metrics_collection_interval": 60,
-        "measurement": [
-          "mem_used_percent"
-        ]
-      },
-      "swap": {
-        "metrics_collection_interval": 60,
-        "measurement": [
-          "swap_used_percent"
-        ]
-      }
-    },
-    "append_dimensions": {
-      "InstanceId": "${aws:InstanceId}",
-      "InstanceName": "${aws:InstanceName}"
-    }
-  },
-  "logs": {
-    "logs_collected": {
-      "files": {
-        "collect_list": [
-          {
-            "file_path": "/var/log/cloud-init-output.log",
-            "log_group_name": "/ec2/cloud-init-output",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/var/log/nginx/access.log",
-            "log_group_name": "/ec2/nginx/access",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/var/log/nginx/error.log",
-            "log_group_name": "/ec2/nginx/error",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 7
-          }
-          # Add more log files here, e.g., for your specific application
-          # {
-          #   "file_path": "/path/to/your/app.log",
-          #   "log_group_name": "/ec2/your-app-name",
-          #   "log_stream_name": "{instance_id}",
-          #   "retention_in_days": 7
-          # }
-        ]
-      }
-    },
-    "log_stream_name": "{instance_id}"
-  }
-}
-EOF
+if [ -f "${CWA_CONFIG_FILE}" ]; then
+    echo "[INFO] Starting CloudWatch Agent using ${CWA_CONFIG_FILE}..."
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+        -a fetch-config \
+        -m ec2 \
+        -c "file:${CWA_CONFIG_FILE}" \
+        -s
+else
+    echo "[WARN] No explicit config file found. Initializing agent with default metrics..."
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+        -a fetch-config \
+        -m ec2 \
+        -c default \
+        -s
+fi
 
-echo "CloudWatch Agent configuration created."
-
-sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
-
-echo "CloudWatch Agent started."
-
-echo "Instance setup complete."
-
-#
+echo "======================================================================"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Instance bootstrap complete!"
+echo "======================================================================"
