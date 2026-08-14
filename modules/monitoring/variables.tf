@@ -28,7 +28,7 @@ variable "alert_email" {
 variable "sns_kms_key_id" {
   type        = string
   description = "KMS Key ID or ARN to encrypt the SNS Topic at rest (Alias 'alias/aws/sns' default if null)"
-  default     = "alias/aws/sns"
+  default     = null
 }
 
 variable "cpu_alarm_threshold" {

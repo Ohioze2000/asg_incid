@@ -94,7 +94,7 @@ resource "aws_launch_template" "web_server_lt" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = fileexists(var.user_data_path) ? filebase64(var.user_data_path) : null
+  user_data = filebase64("${path.root}/${var.user_data_path}")
 
   block_device_mappings {
     device_name = "/dev/sda1"

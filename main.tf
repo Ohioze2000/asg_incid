@@ -44,19 +44,6 @@ locals {
 # 1. CORE VPC & NETWORKING MODULES
 # ==============================================================================
 
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr_block
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "${var.env_prefix}-vpc"
-    }
-  )
-}
-
 module "network" {
   source         = "./modules/network"
   vpc_id         = aws_vpc.main.id
@@ -108,10 +95,18 @@ resource "aws_acm_certificate_validation" "cert_validation" {
 module "alb" {
   source          = "./modules/alb"
   env_prefix      = var.env_prefix
-  vpc_id          = aws_vpc.main.id
+  vpc_id          = module.network.vpc_id
   subnet_ids      = module.network.public_subnet_ids
-  certificate_arn = aws_acm_certificate_validation.cert_validation.certificate_arn
+  
+  # Known at plan-time to avoid count evaluation errors
+  certificate_arn = module.ssl.certificate_arn 
+  
   tags            = local.common_tags
+
+  # Ensure validation completes before listeners are attached
+  depends_on = [
+    aws_acm_certificate_validation.cert_validation
+  ]
 }
 
 # ==============================================================================

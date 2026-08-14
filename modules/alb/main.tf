@@ -106,35 +106,25 @@ resource "aws_lb_target_group" "app_tg" {
 # ==============================================================================
 
 # HTTP Listener: Forwards to Target Group if no ACM cert provided; otherwise redirects to HTTPS
+# HTTP Listener: Always redirects to HTTPS
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app_alb.arn
   port              = 80
   protocol          = "HTTP"
 
-  dynamic "default_action" {
-    for_each = var.certificate_arn != "" ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-
-  dynamic "default_action" {
-    for_each = var.certificate_arn == "" ? [1] : []
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.app_tg.arn
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
     }
   }
 }
 
 # HTTPS Listener: Created conditionally when an ACM Certificate ARN is passed
+# HTTPS Listener: Always created
 resource "aws_lb_listener" "https" {
-  count             = var.certificate_arn != "" ? 1 : 0
   load_balancer_arn = aws_lb.app_alb.arn
   port              = 443
   protocol          = "HTTPS"
