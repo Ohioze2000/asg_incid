@@ -20,7 +20,7 @@ jobs:
     
     env:
       TF_CLOUD_ORGANIZATION: "DigitalTech"
-      TF_WORKSPACE: "asg-in"
+      TF_WORKSPACE: asg-incid"
 
     steps:
       - name: Checkout Code
