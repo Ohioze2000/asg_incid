@@ -57,13 +57,7 @@ resource "aws_cloudwatch_metric_alarm" "app_alarms" {
   alarm_actions = var.alarm_sns_topic_arns
   ok_actions    = var.alarm_sns_topic_arns
 
-  dynamic "dimensions" {
-    for_each = lookup(each.value, "dimensions", {})
-    content {
-      name  = dimensions.key
-      value = dimensions.value
-    }
-  }
+  dimensions = lookup(each.value, "dimensions", {})
 
   tags = merge(
     var.tags,
