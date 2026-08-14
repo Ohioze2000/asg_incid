@@ -1,4 +1,3 @@
-#
 variable "vpc_cidr_block"{
   type = string
   description = "VPC CIDR BLOCK"
@@ -17,4 +16,8 @@ variable "vpc_id" {
   description = "The ID of the VPC to which network resources will be attached."
 }
 
-
+variable "tags" {
+  type        = map(string)
+  default     = {}
+  description = "A map of tags to add to all network resources."
+}

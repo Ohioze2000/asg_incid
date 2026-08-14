@@ -1,4 +1,3 @@
-#
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -15,9 +14,13 @@ resource "aws_subnet" "my-public-subnet-1" {
     availability_zone   = local.selected_azs[count.index] # Use the filtered list of AZs
     map_public_ip_on_launch = true
 
-    tags = {
-        Name = "${var.env_prefix}-pub-subnet-${count.index + 1}"
-    }
+    tags = merge(
+      var.tags,
+      {
+        Name = "${var.env_prefix}-public-subnet-${count.index + 1}"
+        Type = "Public"
+      }
+    )
 }
 
 resource "aws_subnet" "my-private-subnet-1" {
@@ -26,29 +29,40 @@ resource "aws_subnet" "my-private-subnet-1" {
     vpc_id = var.vpc_id
     availability_zone   = local.selected_azs[count.index] # Use the filtered list of AZs
 
-    tags = {
-        Name = "${var.env_prefix}-priv-subnet-${count.index + 1}"
-    }
+    tags = merge(
+      var.tags,
+      {
+        Name = "${var.env_prefix}-private-subnet-${count.index + 1}"
+        Type = "Private"
+      }
+    )
 }
 
 resource "aws_internet_gateway" "my-igw" {
     vpc_id = var.vpc_id
 
-    tags = {
+    tags = merge(
+      var.tags,
+      {
         Name = "${var.env_prefix}-igw"
-    }
+      }
+    )
 }
 
 resource "aws_route_table" "my-rtb" {
     vpc_id = var.vpc_id
-        route {
+    
+    route {
             cidr_block = "0.0.0.0/0"
             gateway_id = aws_internet_gateway.my-igw.id
-        }
+        }    
     
-    tags = {
-        Name = "${var.env_prefix}-rtb"
-    }
+    tags = merge(
+      var.tags,
+      {
+        Name = "${var.env_prefix}-public-rtb"
+      }
+    )
 }
 
 resource "aws_route_table_association" "my-rtb-sub-ass" {
@@ -61,9 +75,12 @@ resource "aws_route_table_association" "my-rtb-sub-ass" {
     resource "aws_eip" "nat" {
     count = var.az_count
     
-    tags = { 
-      Name = "${var.env_prefix}-nat-eip-${count.index + 1}" 
-    }
+    tags = merge(
+      var.tags,
+      {
+        Name = "${var.env_prefix}-nat-eip-${count.index + 1}"
+      }
+    )
 }
 
 # NAT Gateway
@@ -73,9 +90,12 @@ resource "aws_nat_gateway" "my-nat" {
   subnet_id     = aws_subnet.my-public-subnet-1[count.index].id
   depends_on    = [aws_internet_gateway.my-igw]
 
-  tags = {
-    Name = "${var.env_prefix}-nat-gw-${count.index + 1}" 
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-nat-gw-${count.index + 1}"
+    }
+  )
 }
 
 # Private Route Table
@@ -88,9 +108,12 @@ resource "aws_route_table" "my-private-rtb" {
     nat_gateway_id = aws_nat_gateway.my-nat[count.index].id
   }
 
-  tags = {
-    Name = "${var.env_prefix}-private-rt-${count.index + 1}" 
-  }
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-private-rtb-${count.index + 1}"
+    }
+  )
 }
 
 resource "aws_route_table_association" "private" {

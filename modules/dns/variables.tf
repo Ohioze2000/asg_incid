@@ -1,21 +1,38 @@
-#
-variable "domain_name"{
-  description = "The root domain name to register (must already be registered with a registrar)"
+variable "domain_name" {
   type        = string
+  description = "The apex domain name registered in Route 53 (e.g., example.com)."
 }
 
 variable "alb_dns_name" {
-  description = "The DNS name of the ALB to point records to."
   type        = string
+  description = "The DNS name of the Application Load Balancer."
 }
 
 variable "alb_zone_id" {
-  description = "The Route 53 Hosted Zone ID of the Application Load Balancer."
   type        = string
+  description = "The Route 53 Hosted Zone ID of the Application Load Balancer."
 }
 
 variable "env_prefix" {
-  description = "Prefix for resources created by the DNS module."
   type        = string
+  default     = "prod"
+  description = "Environment prefix used for resource tracking."
 }
 
+variable "create_www_record" {
+  type        = bool
+  default     = true
+  description = "Whether to create a www subdomain alias record."
+}
+
+variable "enable_ipv6" {
+  type        = bool
+  default     = true
+  description = "Whether to create AAAA alias records for IPv6 routing."
+}
+
+variable "tags" {
+  type        = map(string)
+  default     = {}
+  description = "Standard tags map for consistency across modules."
+}

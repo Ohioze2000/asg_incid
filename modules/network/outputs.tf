@@ -5,7 +5,7 @@ output "public_subnet_ids" {
 
 output "private_subnet_ids" {
   description = "List of IDs of the private subnets created by this module."
-  value       = aws_subnet.my-private-subnet-1[*].id # <-- Correct resource name
+  value       = aws_subnet.my-private-subnet-1[*].id
 }
 
 output "public_route_table_id" {
