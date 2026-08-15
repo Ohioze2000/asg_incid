@@ -12,8 +12,7 @@ variable "env_prefix" {
 variable "vpc_cidr_block" {
   type        = string
   description = "Base IPv4 CIDR block for the primary VPC"
-  default     = "10.0.0.0/16"
-}
+  }
 
 variable "az_count" {
   type        = number
@@ -24,7 +23,6 @@ variable "az_count" {
 variable "my_ip" {
   type        = string
   description = "Administrator IP address for restricted access (CIDR format)"
-  default     = "0.0.0.0/0"
 }
 
 variable "domain_name" {
@@ -35,19 +33,16 @@ variable "domain_name" {
 variable "image_name" {
   type        = string
   description = "AMI search pattern for EC2 instance launch template"
-  default     = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
 }
 
 variable "instance_type" {
   type        = string
   description = "EC2 instance type for Auto Scaling Group nodes"
-  default     = "t3.micro"
 }
 
 variable "public_key_content" {
   type        = string
   description = "Raw public SSH key content for direct host access. Leave empty if using SSM"
-  default     = ""
 }
 
 variable "desired_capacity" {

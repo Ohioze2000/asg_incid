@@ -1,3 +1,13 @@
+output "vpc_id" {
+  description = "The ID of the created VPC."
+  value       = aws_vpc.ma-vpc.id
+}
+
+output "vpc_cidr_block" {
+  description = "The CIDR block of the created VPC."
+  value       = aws_vpc.this.cidr_block
+}
+
 output "public_subnet_ids" {
   description = "List of IDs of the public subnets created by this module."
   value       = aws_subnet.my-public-subnet-1[*].id

@@ -17,19 +17,6 @@ provider "aws" {
   }
 }
 
-resource "aws_vpc" "ma-vpc" {
-  cidr_block           = var.vpc_cidr_block
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "${var.env_prefix}-vpc"
-    }
-  )
-}
-
 # ==============================================================================
 # LOCAL VARIABLES
 # ==============================================================================
@@ -59,7 +46,7 @@ locals {
 
 module "network" {
   source         = "./modules/network"
-  vpc_id         = aws_vpc.ma-vpc.id
+  vpc_id         = module.network.vpc_id
   env_prefix     = var.env_prefix
   az_count       = var.az_count
   vpc_cidr_block = var.vpc_cidr_block
@@ -139,7 +126,7 @@ module "iam" {
 module "webserver" {
   source                    = "./modules/webserver"
   env_prefix                = var.env_prefix
-  vpc_id                    = aws_vpc.ma-vpc.id
+  vpc_id                    = module.network.vpc_id
   private_subnet_ids        = module.network.private_subnet_ids
   alb_security_group_id     = module.alb.alb_security_group_id
   target_group_arn          = module.alb.target_group_arn
@@ -181,52 +168,17 @@ module "logging" {
   tags                       = local.common_tags
 }
 
-module "app_logging" {
-  source     = "./modules/logging"
-  env_prefix = var.env_prefix
+# module "app_logging" {
+#   source     = "./modules/logging"
+#   env_prefix = var.env_prefix
+#   log_groups           = var.log_groups
+#   metric_filters       = var.metric_filters
+#   app_alarms           = var.app_alarms
 
-  # Send notifications to the SNS topic created in the monitoring module
-  alarm_sns_topic_arns = [module.monitoring.cloudwatch_alarms_topic_arn]
+#   # Send notifications to the SNS topic created in the monitoring module
+#   alarm_sns_topic_arns = [module.monitoring.cloudwatch_alarms_topic_arn]
 
-  # 1. Log Groups
-  log_groups = {
-    web_app = { retention_in_days = 30 }
-    api_gateway = { retention_in_days = 14 }
-  }
+  
 
-  # 2. Metric Filters (Parsing log data into quantifiable metrics)
-  metric_filters = {
-    http_5xx_errors = {
-      log_group_key    = "web_app"
-      pattern          = "[host, logName, user, timestamp, request, statusCode = 5*, size]"
-      metric_name      = "HTTP5xxCount"
-      metric_namespace = "AppMetrics"
-    }
-    database_timeouts = {
-      log_group_key    = "web_app"
-      pattern          = "?ERROR ?Timeout ?\"Connection refused\""
-      metric_name      = "DBConnectionTimeoutCount"
-      metric_namespace = "AppMetrics"
-    }
-  }
-
-  # 3. Application Alarms
-  app_alarms = {
-    high_5xx_rate = {
-      metric_name      = "HTTP5xxCount"
-      metric_namespace = "AppMetrics"
-      threshold        = 10
-      period           = 300
-      description      = "Triggers when HTTP 5xx responses exceed 10 in 5 minutes"
-    }
-    db_connectivity_failure = {
-      metric_name      = "DBConnectionTimeoutCount"
-      metric_namespace = "AppMetrics"
-      threshold        = 1
-      period           = 60
-      description      = "Triggers immediately if any database connection timeouts are logged"
-    }
-  }
-
-  tags = local.common_tags
-}
+#   tags = local.common_tags
+# }
