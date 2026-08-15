@@ -17,6 +17,19 @@ provider "aws" {
   }
 }
 
+resource "aws_vpc" "ma-vpc" {
+  cidr_block           = var.vpc_cidr_block
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-vpc"
+    }
+  )
+}
+
 # ==============================================================================
 # LOCAL VARIABLES
 # ==============================================================================
@@ -46,7 +59,7 @@ locals {
 
 module "network" {
   source         = "./modules/network"
-  vpc_id         = aws_vpc.main.id
+  vpc_id         = aws_vpc.ma-vpc.id
   env_prefix     = var.env_prefix
   az_count       = var.az_count
   vpc_cidr_block = var.vpc_cidr_block
@@ -126,9 +139,9 @@ module "iam" {
 module "webserver" {
   source                    = "./modules/webserver"
   env_prefix                = var.env_prefix
-  vpc_id                    = aws_vpc.main.id
+  vpc_id                    = aws_vpc.ma-vpc.id
   private_subnet_ids        = module.network.private_subnet_ids
-  alb_security_group_id    = module.alb.alb_security_group_id
+  alb_security_group_id     = module.alb.alb_security_group_id
   target_group_arn          = module.alb.target_group_arn
   iam_instance_profile_name = module.iam.iam_instance_profile_name
   instance_type             = var.instance_type

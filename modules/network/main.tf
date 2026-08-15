@@ -6,19 +6,6 @@ data "aws_availability_zones" "available" {
 locals {
   selected_azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 }
-
-resource "aws_vpc" "ma-vpc" {
-  cidr_block           = var.vpc_cidr_block
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "${var.env_prefix}-vpc"
-    }
-  )
-}
 resource "aws_subnet" "my-public-subnet-1" {
     count             = var.az_count
     cidr_block = cidrsubnet(var.vpc_cidr_block, 8, count.index)
