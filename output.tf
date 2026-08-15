@@ -47,7 +47,7 @@ output "ec2_security_group_id" {
 
 output "vpc_id" {
   description = "The ID of the provisioned VPC"
-  value       = aws_vpc.ma-vpc.id
+  value       = module.network.vpc_id
 }
 
 output "public_subnet_ids" {

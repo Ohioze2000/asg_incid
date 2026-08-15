@@ -5,7 +5,7 @@ output "vpc_id" {
 
 output "vpc_cidr_block" {
   description = "The CIDR block of the created VPC."
-  value       = aws_vpc.this.cidr_block
+  value       = aws_vpc.ma-vpc.cidr_block
 }
 
 output "public_subnet_ids" {
