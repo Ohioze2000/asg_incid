@@ -153,10 +153,15 @@ module "monitoring" {
   tags              = local.common_tags
 }
 
+# Declarative import targeting the child module's resource
+import {
+  to = aws_cloudwatch_log_group.lambda_log_group
+  id = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
+}
+
 # ==============================================================================
 # 7. APPLICATION LOGGING & OBSERVABILITY
 # ==============================================================================
-
 module "logging" {
   source                     = "./modules/logging"
   env_prefix                 = var.env_prefix
