@@ -117,6 +117,12 @@ resource "aws_iam_role_policy" "lambda_remediation_permissions" {
   })
 }
 
+# Declarative import block: Adopts pre-created log groups into state automatically during plan/apply
+import {
+  to = aws_cloudwatch_log_group.lambda_log_group
+  id = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
+}
+
 # Explicit Log Group management to prevent unexpiring CloudWatch logs
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
   name              = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
