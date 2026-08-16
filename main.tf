@@ -154,10 +154,10 @@ module "monitoring" {
 }
 
 # Declarative import targeting the child module's resource using full module address
-import {
-  to = module.monitoring.aws_cloudwatch_log_group.lambda_log_group
-  id = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
-}
+# import {
+#   to = module.monitoring.aws_cloudwatch_log_group.lambda_log_group
+#   id = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
+# }
 
 # ==============================================================================
 # 7. APPLICATION LOGGING & OBSERVABILITY
