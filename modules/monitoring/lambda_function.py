@@ -3,7 +3,7 @@ import json
 import urllib.request
 import logging
 import boto3
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Initialize structured logging engine
 logger = logging.getLogger()
@@ -37,10 +37,11 @@ def lambda_handler(event, context):
     slack_webhook_url = os.environ.get('SLACK_WEBHOOK_URL')
     target_group_arn  = os.environ.get('TARGET_GROUP_ARN')
     asg_name          = os.environ.get('ASG_NAME')
+    env_prefix        = os.environ.get('ENV_PREFIX', 'production')
     
     incident_id = f"INC-{context.aws_request_id[:8].upper()}"
-    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
-    remediation_summary = "🔍 *Analysis:* Scale-up trigger detected. Nodes are highly utilized but healthy. ASG is handling capacity natively."
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    remediation_summary = "🔍 *Analysis:* Threshold trigger detected. Nodes evaluated; healthy instance state maintained."
     remediated_instance_id = None
 
     # 3. INTERCEPT AND ISOLATE FAILING BACKEND INSTANCES
@@ -49,15 +50,13 @@ def lambda_handler(event, context):
             # Check the health state details of individual registered nodes
             health_response = elbv2.describe_target_health(TargetGroupArn=target_group_arn)
             unhealthy_nodes = [
-                target['Target']['Id'] for target in health_response['TargetHealthDescriptions']
-                if target['TargetHealth']['State'] == 'unhealthy'
+                target['Target']['Id'] for target in health_response.get('TargetHealthDescriptions', [])
+                if target.get('TargetHealth', {}).get('State') == 'unhealthy'
             ]
             
             if unhealthy_nodes:
                 remediated_instance_id = unhealthy_nodes[0]
-                remediation_summary = f"⚡ *AUTOMATED REMEDIATION ENGAGED:* Detached failing instance `{remediated_instance_id}` from production clusters to isolate errors."
-                
-                logger.warn(f"Isolating unhealthy node {remediated_instance_id} from target group {target_group_arn}")
+                logger.warning(f"Isolating unhealthy node {remediated_instance_id} from target group {target_group_arn}")
                 
                 # Command ASG to release instance and immediately provision a healthy replacement node
                 autoscaling.detach_instances(
@@ -74,6 +73,8 @@ def lambda_handler(event, context):
                         {'Key': 'Incident_ID', 'Value': incident_id}
                     ]
                 )
+
+                remediation_summary = f"⚡ *AUTOMATED REMEDIATION ENGAGED:* Detached failing instance `{remediated_instance_id}` from production clusters for quarantine."
         except Exception as err:
             remediation_summary = f"❌ *Automated Mitigation Step Failed:* {str(err)}"
             logger.error(f"Error executing remediation loop: {str(err)}")
@@ -93,7 +94,7 @@ def lambda_handler(event, context):
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Incident ID:*\n{incident_id}"},
                     {"type": "mrkdwn", "text": f"*Trigger Time:*\n{timestamp}"},
-                    {"type": "mrkdwn", "text": f"*Environment:*\n`production`"}
+                    {"type": "mrkdwn", "text": f"*Environment:*\n`{env_prefix}`"}
                 ]
             },
             {
@@ -114,7 +115,7 @@ def lambda_handler(event, context):
         ]
     }
 
-    # Dynamically append the interactive button block ONLY if an active target instance was quarantined
+    # Dynamically append interactive button if instance was quarantined
     if remediated_instance_id:
         slack_payload["blocks"].extend([
             {"type": "divider"},

@@ -7,7 +7,7 @@ locals {
   selected_azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
 }
 resource "aws_vpc" "ma-vpc" {
-  cidr_block           = var.vpc_cidr_block
+  cidr_block = var.vpc_cidr_block
   enable_dns_hostnames = true
   enable_dns_support   = true
 
@@ -19,10 +19,10 @@ resource "aws_vpc" "ma-vpc" {
   )
 }
 resource "aws_subnet" "my-public-subnet-1" {
-    count             = var.az_count
+    count = var.az_count
     cidr_block = cidrsubnet(var.vpc_cidr_block, 8, count.index)
-    vpc_id = var.vpc_id
-    availability_zone   = local.selected_azs[count.index] # Use the filtered list of AZs
+    vpc_id = aws_vpc.ma-vpc.id
+    availability_zone = local.selected_azs[count.index] # Use the filtered list of AZs
     map_public_ip_on_launch = true
 
     tags = merge(
@@ -35,10 +35,10 @@ resource "aws_subnet" "my-public-subnet-1" {
 }
 
 resource "aws_subnet" "my-private-subnet-1" {
-    count             = var.az_count # Use az_count here too
+    count = var.az_count # Use az_count here too
     cidr_block = cidrsubnet(var.vpc_cidr_block, 8, count.index + var.az_count)
-    vpc_id = var.vpc_id
-    availability_zone   = local.selected_azs[count.index] # Use the filtered list of AZs
+    vpc_id = aws_vpc.ma-vpc.id
+    availability_zone = local.selected_azs[count.index] # Use the filtered list of AZs
 
     tags = merge(
       var.tags,
@@ -50,7 +50,7 @@ resource "aws_subnet" "my-private-subnet-1" {
 }
 
 resource "aws_internet_gateway" "my-igw" {
-    vpc_id = var.vpc_id
+    vpc_id = aws_vpc.ma-vpc.id
 
     tags = merge(
       var.tags,
@@ -61,7 +61,7 @@ resource "aws_internet_gateway" "my-igw" {
 }
 
 resource "aws_route_table" "my-rtb" {
-    vpc_id = var.vpc_id
+    vpc_id = aws_vpc.ma-vpc.id
     
     route {
             cidr_block = "0.0.0.0/0"
@@ -77,7 +77,7 @@ resource "aws_route_table" "my-rtb" {
 }
 
 resource "aws_route_table_association" "my-rtb-sub-ass" {
-    count          = var.az_count
+    count = var.az_count
     subnet_id = aws_subnet.my-public-subnet-1[count.index].id
     route_table_id = aws_route_table.my-rtb.id
 }
@@ -96,10 +96,10 @@ resource "aws_route_table_association" "my-rtb-sub-ass" {
 
 # NAT Gateway
 resource "aws_nat_gateway" "my-nat" {
-  count         = var.az_count
+  count = var.az_count
   allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.my-public-subnet-1[count.index].id
-  depends_on    = [aws_internet_gateway.my-igw]
+  subnet_id = aws_subnet.my-public-subnet-1[count.index].id
+  depends_on = [aws_internet_gateway.my-igw]
 
   tags = merge(
     var.tags,
@@ -112,10 +112,10 @@ resource "aws_nat_gateway" "my-nat" {
 # Private Route Table
 resource "aws_route_table" "my-private-rtb" {
   count  = var.az_count
-  vpc_id = var.vpc_id
+  vpc_id = aws_vpc.ma-vpc.id
 
   route {
-    cidr_block     = "0.0.0.0/0"
+    cidr_block = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.my-nat[count.index].id
   }
 
@@ -128,7 +128,7 @@ resource "aws_route_table" "my-private-rtb" {
 }
 
 resource "aws_route_table_association" "private" {
-  count          = var.az_count
-  subnet_id      = aws_subnet.my-private-subnet-1[count.index].id
+  count = var.az_count
+  subnet_id = aws_subnet.my-private-subnet-1[count.index].id
   route_table_id = aws_route_table.my-private-rtb[count.index].id
 }

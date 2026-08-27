@@ -31,7 +31,7 @@ variable "metric_filters" {
     metric_name      = string
     metric_namespace = string
     metric_value     = optional(string, "1")
-    default_value    = optional(string)
+    default_value    = optional(string, "0")
   }))
   description = "Map of custom CloudWatch log metric filters to parse error logs or custom events"
   default     = {}

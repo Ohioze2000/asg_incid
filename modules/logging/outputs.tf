@@ -9,8 +9,8 @@ output "log_group_names" {
 }
 
 output "metric_filter_names" {
-  description = "List of generated metric filter names"
-  value       = [for k, v in aws_cloudwatch_log_metric_filter.filters : v.name]
+  description = "Map of generated metric filter names keyed by metric filter key"
+  value       = { for k, v in aws_cloudwatch_log_metric_filter.filters : k => v.name }
 }
 
 output "alarm_arns" {

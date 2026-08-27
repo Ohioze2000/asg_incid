@@ -12,7 +12,7 @@ variable "env_prefix" {
 variable "vpc_cidr_block" {
   type        = string
   description = "Base IPv4 CIDR block for the primary VPC"
-  }
+}
 
 variable "az_count" {
   type        = number
@@ -66,6 +66,13 @@ variable "max_size" {
 variable "slack_webhook_url" {
   type        = string
   description = "Slack Webhook URL for CloudWatch incident alerting and remediation events"
+  sensitive   = true
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Email address for SNS CloudWatch alarm notifications"
+  default     = ""
   sensitive   = true
 }
 

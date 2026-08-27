@@ -46,7 +46,6 @@ locals {
 
 module "network" {
   source         = "./modules/network"
-  vpc_id         = module.network.vpc_id
   env_prefix     = var.env_prefix
   az_count       = var.az_count
   vpc_cidr_block = var.vpc_cidr_block
@@ -97,13 +96,9 @@ module "alb" {
   env_prefix      = var.env_prefix
   vpc_id          = module.network.vpc_id
   subnet_ids      = module.network.public_subnet_ids
-  
-  # Known at plan-time to avoid count evaluation errors
   certificate_arn = module.ssl.certificate_arn 
-  
   tags            = local.common_tags
 
-  # Ensure validation completes before listeners are attached
   depends_on = [
     aws_acm_certificate_validation.cert_validation
   ]
@@ -141,27 +136,9 @@ module "webserver" {
 }
 
 # ==============================================================================
-# 6. MONITORING & AUTOMATED REMEDIATION
+# 6. APPLICATION LOGGING & OBSERVABILITY (Moved above Monitoring)
 # ==============================================================================
 
-module "monitoring" {
-  source            = "./modules/monitoring"
-  env_prefix        = var.env_prefix
-  asg_name          = module.webserver.asg_name
-  target_group_arn  = module.alb.target_group_arn
-  slack_webhook_url = var.slack_webhook_url
-  tags              = local.common_tags
-}
-
-# Declarative import targeting the child module's resource using full module address
-# import {
-#   to = module.monitoring.aws_cloudwatch_log_group.lambda_log_group
-#   id = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
-# }
-
-# ==============================================================================
-# 7. APPLICATION LOGGING & OBSERVABILITY
-# ==============================================================================
 module "logging" {
   source                     = "./modules/logging"
   env_prefix                 = var.env_prefix
@@ -173,17 +150,18 @@ module "logging" {
   tags                       = local.common_tags
 }
 
-# module "app_logging" {
-#   source     = "./modules/logging"
-#   env_prefix = var.env_prefix
-#   log_groups           = var.log_groups
-#   metric_filters       = var.metric_filters
-#   app_alarms           = var.app_alarms
+# ==============================================================================
+# 7. MONITORING & AUTOMATED REMEDIATION
+# ==============================================================================
 
-#   # Send notifications to the SNS topic created in the monitoring module
-#   alarm_sns_topic_arns = [module.monitoring.cloudwatch_alarms_topic_arn]
+module "monitoring" {
+  source             = "./modules/monitoring"
+  env_prefix         = var.env_prefix
+  asg_name           = module.webserver.asg_name
+  target_group_arn   = module.alb.target_group_arn
+  slack_webhook_url  = var.slack_webhook_url
+  alert_email        = var.alert_email
+  app_log_group_name = module.logging.log_group_names["web_app"]
 
-  
-
-#   tags = local.common_tags
-# }
+  tags = local.common_tags
+}

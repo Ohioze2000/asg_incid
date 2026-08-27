@@ -27,10 +27,11 @@ variable "alert_email" {
 
 variable "sns_kms_key_id" {
   type        = string
-  description = "KMS Key ID or ARN to encrypt the SNS Topic at rest (Alias 'alias/aws/sns' default if null)"
+  description = "KMS Key ID or ARN to encrypt the SNS Topic at rest"
   default     = null
 }
 
+# --- CPU Alarm Variables ---
 variable "cpu_alarm_threshold" {
   type        = number
   description = "Average CPU threshold percent to trigger alarm"
@@ -55,6 +56,63 @@ variable "cpu_alarm_period" {
   default     = 300
 }
 
+# --- Disk Alarm Variables ---
+variable "enable_disk_alarm" {
+  type        = bool
+  description = "Whether to deploy the high disk usage alarm"
+  default     = true
+}
+
+variable "disk_alarm_threshold" {
+  type        = number
+  description = "Root disk usage threshold percentage to trigger alarm"
+  default     = 85
+}
+
+variable "disk_evaluation_periods" {
+  type        = number
+  description = "Evaluation periods for disk alarm"
+  default     = 2
+}
+
+variable "disk_alarm_period" {
+  type        = number
+  description = "Period in seconds for disk alarm evaluation"
+  default     = 300
+}
+
+# --- Log Error Alarm Variables ---
+variable "enable_log_error_alarm" {
+  type        = bool
+  description = "Whether to enable application log error monitoring"
+  default     = true
+}
+
+variable "app_log_group_name" {
+  type        = string
+  description = "Name of the CloudWatch log group storing application logs"
+  default     = "/ec2/app-logs"
+}
+
+variable "log_error_pattern" {
+  type        = string
+  description = "Metric filter pattern to search for error terms in logs"
+  default     = "?ERROR ?Error ?error ?500 ?EXCEPTION ?Exception"
+}
+
+variable "log_error_threshold" {
+  type        = number
+  description = "Number of log error occurrences in period to trigger alarm"
+  default     = 5
+}
+
+variable "log_error_alarm_period" {
+  type        = number
+  description = "Evaluation window in seconds for error log frequency"
+  default     = 60
+}
+
+# --- General Variables ---
 variable "log_retention_in_days" {
   type        = number
   description = "CloudWatch Log Group retention period in days for the remediation Lambda"

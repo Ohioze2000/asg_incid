@@ -26,6 +26,7 @@ resource "aws_sns_topic_subscription" "email_subscription" {
 # 2. METRIC ALARMS
 # ==============================================================================
 
+# --- HIGH CPU ALARM ---
 resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
   alarm_name          = "${var.env_prefix}-ASG-High-CPU-Utilization"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -55,8 +56,84 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
   )
 }
 
+# --- HIGH DISK UTILIZATION ALARM ---
+resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
+  count               = var.enable_disk_alarm ? 1 : 0
+  alarm_name          = "${var.env_prefix}-ASG-High-Disk-Utilization"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = var.disk_evaluation_periods
+  metric_name         = "disk_used_percent" # Standard CloudWatch Agent metric
+  namespace           = "CWAgent"           # Custom namespace where agent publishes
+  period              = var.disk_alarm_period
+  statistic           = "Average"
+  threshold           = var.disk_alarm_threshold
+  alarm_description   = "Alarm when root disk utilization across Auto Scaling Group '${var.asg_name}' exceeds ${var.disk_alarm_threshold}%"
+  actions_enabled     = true
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    AutoScalingGroupName = var.asg_name
+    path                 = "/"
+  }
+
+  alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]
+  ok_actions    = [aws_sns_topic.cloudwatch_alarms_topic.arn]
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-ASG-High-Disk-Alarm"
+    }
+  )
+}
+
 # ==============================================================================
-# 3. PROACTIVE AUTOMATED REMEDIATION ENGINE (LAMBDA & COMPONENT HOOKS)
+# 3. LOG ERROR MONITORING (FILTER + ALARM)
+# ==============================================================================
+
+# Metric Filter to parse error strings from CloudWatch Log Group
+resource "aws_cloudwatch_log_metric_filter" "app_error_filter" {
+  count          = var.enable_log_error_alarm ? 1 : 0
+  name           = "${var.env_prefix}-app-error-filter"
+  pattern        = var.log_error_pattern
+  log_group_name = var.app_log_group_name
+
+  metric_transformation {
+    name          = "${var.env_prefix}-AppErrorCount"
+    namespace     = "CustomAppMetrics"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Alarm on Log Error occurrences
+resource "aws_cloudwatch_metric_alarm" "app_error_alarm" {
+  count               = var.enable_log_error_alarm ? 1 : 0
+  alarm_name          = "${var.env_prefix}-App-Log-Errors-Spike"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = aws_cloudwatch_log_metric_filter.app_error_filter[0].metric_transformation[0].name
+  namespace           = aws_cloudwatch_log_metric_filter.app_error_filter[0].metric_transformation[0].namespace
+  period              = var.log_error_alarm_period
+  statistic           = "Sum"
+  threshold           = var.log_error_threshold
+  alarm_description   = "Alarm when application error occurrences in log group '${var.app_log_group_name}' exceed ${var.log_error_threshold}"
+  actions_enabled     = true
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]
+  ok_actions    = [aws_sns_topic.cloudwatch_alarms_topic.arn]
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-App-Log-Errors-Alarm"
+    }
+  )
+}
+
+# ==============================================================================
+# 4. PROACTIVE AUTOMATED REMEDIATION ENGINE (LAMBDA & COMPONENT HOOKS)
 # ==============================================================================
 
 resource "aws_iam_role" "lambda_remediation_role" {
@@ -104,7 +181,7 @@ resource "aws_iam_role_policy" "lambda_remediation_permissions" {
         Action = [
           "autoscaling:DetachInstances"
         ]
-        Resource = "*" # Scoped down by ASG ARN if available
+        Resource = "*"
       },
       {
         Effect = "Allow"
@@ -117,7 +194,6 @@ resource "aws_iam_role_policy" "lambda_remediation_permissions" {
   })
 }
 
-# Explicit Log Group management to prevent unexpiring CloudWatch logs
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
   name              = "/aws/lambda/${var.env_prefix}-incident-remediation-engine"
   retention_in_days = var.log_retention_in_days
@@ -125,7 +201,6 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
   tags = var.tags
 }
 
-# Archive fallback ensures code packages cleanly even during plan step
 data "archive_file" "lambda_zip" {
   type        = "zip"
   output_path = "${path.module}/lambda_function.zip"
@@ -138,7 +213,6 @@ data "archive_file" "lambda_zip" {
     }
   }
 
-  # Fallback code if lambda_function.py is missing locally
   dynamic "source" {
     for_each = fileexists("${path.module}/lambda_function.py") ? [] : [1]
     content {

@@ -12,7 +12,8 @@ resource "aws_cloudwatch_log_group" "app_log_groups" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.env_prefix}-${each.key}-logs"
+      Name        = "${var.env_prefix}-${each.key}-logs"
+      Environment = var.env_prefix
     }
   )
 }
@@ -30,7 +31,7 @@ resource "aws_cloudwatch_log_metric_filter" "filters" {
 
   metric_transformation {
     name          = each.value.metric_name
-    namespace     = "${var.env_prefix}/${each.value.metric_namespace}"
+    namespace     = each.value.metric_namespace
     value         = each.value.metric_value
     default_value = each.value.default_value
   }
@@ -47,7 +48,7 @@ resource "aws_cloudwatch_metric_alarm" "app_alarms" {
   comparison_operator = each.value.comparison_operator
   evaluation_periods  = each.value.evaluation_periods
   metric_name         = each.value.metric_name
-  namespace           = each.value.is_custom_metric ? "${var.env_prefix}/${each.value.metric_namespace}" : each.value.metric_namespace
+  namespace           = each.value.metric_namespace
   period              = each.value.period
   statistic           = each.value.statistic
   threshold           = each.value.threshold
@@ -62,7 +63,10 @@ resource "aws_cloudwatch_metric_alarm" "app_alarms" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.env_prefix}-${each.key}-alarm"
+      Name        = "${var.env_prefix}-${each.key}-alarm"
+      Environment = var.env_prefix
     }
   )
+
+  depends_on = [aws_cloudwatch_log_metric_filter.filters]
 }

@@ -4,6 +4,7 @@
     "run_as_user": "root"
   },
   "metrics": {
+    "namespace": "CWAgent",
     "metrics_collected": {
       "cpu": {
         "metrics_collection_interval": 60,
@@ -20,7 +21,8 @@
         "measurement": [
           "used_percent",
           "inodes_free"
-        ]
+        ],
+        "drop_device": true
       },
       "mem": {
         "metrics_collection_interval": 60,
@@ -36,9 +38,11 @@
       }
     },
     "append_dimensions": {
-      "InstanceId": "${aws:InstanceId}",
-      "InstanceName": "${aws:InstanceName}"
-    }
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "aggregation_dimensions": [
+      ["InstanceId"]
+    ]
   },
   "logs": {
     "logs_collected": {
@@ -47,6 +51,12 @@
           {
             "file_path": "/var/log/cloud-init-output.log",
             "log_group_name": "/ec2/cloud-init-output",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/var/log/user-data.log",
+            "log_group_name": "/ec2/user-data",
             "log_stream_name": "{instance_id}",
             "retention_in_days": 7
           },
@@ -61,10 +71,15 @@
             "log_group_name": "/ec2/nginx/error",
             "log_stream_name": "{instance_id}",
             "retention_in_days": 7
+          },
+          {
+            "file_path": "/var/log/app/*.log",
+            "log_group_name": "/ec2/app-logs",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
           }
         ]
       }
-    },
-    "log_stream_name": "{instance_id}"
+    }
   }
 }

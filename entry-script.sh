@@ -4,16 +4,24 @@ set -euo pipefail
 # ==============================================================================
 # LOGGING SETUP
 # ==============================================================================
+# Redirect stdout and stderr to both user-data.log and the system console
 exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 echo "======================================================================"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting EC2 User Data Bootstrap Process"
 echo "======================================================================"
 
-# Non-interactive apt configuration
 export DEBIAN_FRONTEND=noninteractive
 
 # ==============================================================================
-# 1. SYSTEM UPDATES & DEPENDENCY INSTALLATION
+# 1. PREPARE HOST LOG DIRECTORIES
+# ==============================================================================
+echo "[INFO] Creating log directories on host machine for container volume mounts..."
+sudo mkdir -p /var/log/nginx
+sudo mkdir -p /var/log/app
+sudo chmod -R 777 /var/log/nginx /var/log/app
+
+# ==============================================================================
+# 2. SYSTEM UPDATES & DEPENDENCY INSTALLATION
 # ==============================================================================
 echo "[INFO] Updating package index and installing dependencies..."
 sudo apt-get update -y
@@ -26,7 +34,7 @@ sudo apt-get install -y \
     wget
 
 # ==============================================================================
-# 2. DOCKER ENGINE INSTALLATION
+# 3. DOCKER ENGINE INSTALLATION
 # ==============================================================================
 echo "[INFO] Configuring Docker official repository..."
 sudo mkdir -p /etc/apt/keyrings
@@ -45,7 +53,7 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 sudo usermod -aG docker ubuntu || true
 
 # ==============================================================================
-# 3. APPLICATION CONTAINERIZATION & DEPLOYMENT
+# 4. APPLICATION CONTAINERIZATION & DEPLOYMENT
 # ==============================================================================
 echo "[INFO] Fetching web content and building Docker image..."
 APP_DIR="/opt/estate-agency"
@@ -53,47 +61,43 @@ sudo mkdir -p "${APP_DIR}"
 cd "${APP_DIR}"
 
 sudo wget -q https://github.com/Ohioze2000/estate-agency/raw/refs/heads/main/estate-agency.zip
-sudo unzip -o estate-agency.zip
-cd estate-agency
+sudo unzip -o estate-agency.zip -d "${APP_DIR}/src"
+cd "${APP_DIR}/src"
 
-echo "[INFO] Building and starting Docker application container..."
+# Handle optional inner folder structure if zip contains a nested directory
+if [ ! -f "Dockerfile" ] && [ -d "estate-agency" ]; then
+    cd estate-agency
+fi
+
+echo "[INFO] Building Docker application container..."
 sudo docker build -t estate-agency .
-sudo docker run -d --name estate-agency-app --restart always -p 80:80 estate-agency
+
+echo "[INFO] Starting Docker application container with mounted host volumes..."
+sudo docker run -d \
+  --name estate-agency-app \
+  --restart always \
+  -p 80:80 \
+  -v /var/log/nginx:/var/log/nginx \
+  -v /var/log/app:/var/log/app \
+  --log-driver json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  estate-agency
 
 # ==============================================================================
-# 4. CLOUDWATCH AGENT INSTALLATION & STARTUP
+# 5. CLOUDWATCH AGENT INSTALLATION & STARTUP (VIA SSM)
 # ==============================================================================
 echo "[INFO] Installing AWS CloudWatch Agent..."
 wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
 sudo dpkg -i /tmp/amazon-cloudwatch-agent.deb
 rm -f /tmp/amazon-cloudwatch-agent.deb
 
-echo "[INFO] Checking for decoupled CloudWatch configuration..."
-CWA_CONFIG_FILE="/opt/aws/amazon-cloudwatch-agent/bin/config.json"
-
-# Option A: Local file rendered via Terraform user_data / templatefile
-# Option B: Downloaded dynamically from AWS SSM Parameter Store if file does not exist locally
-if [ ! -f "${CWA_CONFIG_FILE}" ]; then
-    echo "[WARN] Local config file ${CWA_CONFIG_FILE} not present. Attempting to fetch from SSM..."
-    # If using SSM Parameter Store, uncomment line below:
-    # sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c ssm:/asg-webserver/cloudwatch-agent-config -s
-fi
-
-if [ -f "${CWA_CONFIG_FILE}" ]; then
-    echo "[INFO] Starting CloudWatch Agent using ${CWA_CONFIG_FILE}..."
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-        -a fetch-config \
-        -m ec2 \
-        -c "file:${CWA_CONFIG_FILE}" \
-        -s
-else
-    echo "[WARN] No explicit config file found. Initializing agent with default metrics..."
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-        -a fetch-config \
-        -m ec2 \
-        -c default \
-        -s
-fi
+echo "[INFO] Fetching CloudWatch agent configuration from SSM Parameter Store..."
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c ssm:/asg-webserver/cloudwatch-agent-config \
+    -s
 
 echo "======================================================================"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Instance bootstrap complete!"
