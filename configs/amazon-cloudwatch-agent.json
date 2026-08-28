@@ -19,8 +19,13 @@
           "/"
         ],
         "measurement": [
-          "used_percent",
+          "disk_used_percent",
           "inodes_free"
+        ],
+        "ignore_file_system_types": [
+          "sysfs",
+          "devtmpfs",
+          "tmpfs"
         ],
         "drop_device": true
       },

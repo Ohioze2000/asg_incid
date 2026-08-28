@@ -15,6 +15,26 @@ resource "aws_sns_topic" "cloudwatch_alarms_topic" {
   )
 }
 
+# SNS Topic Policy allowing CloudWatch to publish alarms
+resource "aws_sns_topic_policy" "default" {
+  arn = aws_sns_topic.cloudwatch_alarms_topic.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCloudWatchToPublish"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudwatch.amazonaws.com"
+        }
+        Action   = "sns:Publish"
+        Resource = aws_sns_topic.cloudwatch_alarms_topic.arn
+      }
+    ]
+  })
+}
+
 resource "aws_sns_topic_subscription" "email_subscription" {
   count     = var.alert_email != "" ? 1 : 0
   topic_arn = aws_sns_topic.cloudwatch_alarms_topic.arn
@@ -57,23 +77,23 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
 }
 
 # --- HIGH DISK UTILIZATION ALARM ---
+# NOTE: Dimensions updated to match exact CWAgent payload (drop_device: true)
 resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
   count               = var.enable_disk_alarm ? 1 : 0
   alarm_name          = "${var.env_prefix}-ASG-High-Disk-Utilization"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = var.disk_evaluation_periods
-  metric_name         = "disk_used_percent" # Standard CloudWatch Agent metric
-  namespace           = "CWAgent"           # Custom namespace where agent publishes
+  metric_name         = "disk_used_percent"
+  namespace           = "CWAgent"
   period              = var.disk_alarm_period
   statistic           = "Average"
   threshold           = var.disk_alarm_threshold
-  alarm_description   = "Alarm when root disk utilization across Auto Scaling Group '${var.asg_name}' exceeds ${var.disk_alarm_threshold}%"
+  alarm_description   = "Alarm when root disk utilization exceeds ${var.disk_alarm_threshold}%"
   actions_enabled     = true
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    AutoScalingGroupName = var.asg_name
-    path                 = "/"
+    path = "/"
   }
 
   alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]
@@ -91,7 +111,6 @@ resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
 # 3. LOG ERROR MONITORING (FILTER + ALARM)
 # ==============================================================================
 
-# Metric Filter to parse error strings from CloudWatch Log Group
 resource "aws_cloudwatch_log_metric_filter" "app_error_filter" {
   count          = var.enable_log_error_alarm ? 1 : 0
   name           = "${var.env_prefix}-app-error-filter"
@@ -106,7 +125,6 @@ resource "aws_cloudwatch_log_metric_filter" "app_error_filter" {
   }
 }
 
-# Alarm on Log Error occurrences
 resource "aws_cloudwatch_metric_alarm" "app_error_alarm" {
   count               = var.enable_log_error_alarm ? 1 : 0
   alarm_name          = "${var.env_prefix}-App-Log-Errors-Spike"
@@ -152,16 +170,17 @@ resource "aws_iam_role" "lambda_remediation_role" {
     ]
   })
 
-  tags = var.tags
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.env_prefix}-lambda-remediation-role"
+    }
+  )
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
-  role       = aws_iam_role.lambda_remediation_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-resource "aws_iam_role_policy" "lambda_remediation_permissions" {
-  name = "${var.env_prefix}-lambda-remediation-permissions"
+# Consolidated inline IAM policy for Lambda remediation actions
+resource "aws_iam_role_policy" "lambda_remediation_policy" {
+  name = "${var.env_prefix}-lambda-remediation-policy"
   role = aws_iam_role.lambda_remediation_role.id
 
   policy = jsonencode({
@@ -172,26 +191,28 @@ resource "aws_iam_role_policy" "lambda_remediation_permissions" {
         Action = [
           "elasticloadbalancing:DescribeTargetHealth",
           "autoscaling:DescribeAutoScalingGroups",
-          "ec2:DescribeInstances"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "autoscaling:DetachInstances"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
+          "autoscaling:DetachInstances",
+          "ec2:DescribeInstances",
           "ec2:CreateTags"
         ]
-        Resource = "arn:aws:ec2:*:*:instance/*"
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_remediation_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
@@ -236,6 +257,7 @@ resource "aws_lambda_function" "incident_remediation_engine" {
       SLACK_WEBHOOK_URL = var.slack_webhook_url
       TARGET_GROUP_ARN  = var.target_group_arn
       ASG_NAME          = var.asg_name
+      ENV_PREFIX        = var.env_prefix
     }
   }
 

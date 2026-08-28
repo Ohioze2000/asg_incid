@@ -166,3 +166,14 @@ module "monitoring" {
 
   tags = local.common_tags
 }
+
+# ==============================================================================
+# 8. SSM
+# ==============================================================================
+module "ssm" {
+  source               = "./modules/ssm"
+  env_prefix           = var.env_prefix
+  ssm_parameter_name   = "/asg-webserver/cloudwatch-agent-config"
+  cw_agent_config_path = "${path.root}/amazon-cloudwatch-agent.json"
+  tags                 = var.tags
+}

@@ -31,7 +31,8 @@ sudo apt-get install -y \
     gnupg \
     lsb-release \
     unzip \
-    wget
+    wget \
+    awscli
 
 # ==============================================================================
 # 3. DOCKER ENGINE INSTALLATION
@@ -87,17 +88,32 @@ sudo docker run -d \
 # ==============================================================================
 # 5. CLOUDWATCH AGENT INSTALLATION & STARTUP (VIA SSM)
 # ==============================================================================
+echo "[INFO] Retrieving EC2 metadata and region context via IMDSv2..."
+IMDS_TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+AWS_REGION=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+export AWS_DEFAULT_REGION="${AWS_REGION}"
+
 echo "[INFO] Installing AWS CloudWatch Agent..."
+wget -q "https://s3.${AWS_REGION}.amazonaws.com/amazoncloudwatch-agent-${AWS_REGION}/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb" -O /tmp/amazon-cloudwatch-agent.deb || \
 wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/amazon-cloudwatch-agent.deb
+
 sudo dpkg -i /tmp/amazon-cloudwatch-agent.deb
 rm -f /tmp/amazon-cloudwatch-agent.deb
 
-echo "[INFO] Fetching CloudWatch agent configuration from SSM Parameter Store..."
-sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+echo "[INFO] Fetching CloudWatch agent configuration from SSM Parameter Store (/asg-webserver/cloudwatch-agent-config)..."
+if sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -a fetch-config \
     -m ec2 \
     -c ssm:/asg-webserver/cloudwatch-agent-config \
-    -s
+    -s; then
+    echo "[INFO] CloudWatch Agent configured and started successfully."
+else
+    echo "[ERROR] Failed to fetch CloudWatch Agent config from SSM Parameter Store!"
+    exit 1
+fi
+
+echo "[INFO] Verifying CloudWatch Agent runtime status..."
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status
 
 echo "======================================================================"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Instance bootstrap complete!"
