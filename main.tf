@@ -46,6 +46,7 @@ locals {
 
 module "network" {
   source         = "./modules/network"
+  vpc_id         = module.network.vpc_id
   env_prefix     = var.env_prefix
   az_count       = var.az_count
   vpc_cidr_block = var.vpc_cidr_block
