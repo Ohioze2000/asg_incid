@@ -36,30 +36,24 @@ def lambda_handler(event, context):
         logger.error(f"Error parsing SNS/CloudWatch payload: {str(e)}")
         return {'statusCode': 400, 'body': 'Invalid event structural format'}
 
-    # Gracefully exit if it's a test or an OK state transition reset
-    if new_state != 'ALARM':
-        logger.info(f"Ignored non-alarm state shift: {new_state}")
-        return {'statusCode': 200, 'body': f"Ignored non-alarm state shift: {new_state}"}
-
-    # 2. Extract context variables provided dynamically by our Terraform module
+    # Extract context variables provided dynamically by Terraform
     slack_webhook_url = os.environ.get('SLACK_WEBHOOK_URL')
     target_group_arn  = os.environ.get('TARGET_GROUP_ARN')
     asg_name          = os.environ.get('ASG_NAME')
     env_prefix        = os.environ.get('ENV_PREFIX', 'production')
     
-    # HARD REQUIREMENT CHECK: Alert if webhook URL is missing
     if not slack_webhook_url:
         logger.error("CRITICAL: SLACK_WEBHOOK_URL environment variable is missing or empty!")
+        return {'statusCode': 500, 'body': 'Missing SLACK_WEBHOOK_URL'}
 
     incident_id = f"INC-{context.aws_request_id[:8].upper()}"
     timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-    remediation_summary = "🔍 *Analysis:* Threshold trigger detected. System instances monitored."
+    remediation_summary = "🔍 *Analysis:* Threshold status shift detected."
     remediated_instance_id = None
 
-    # 3. INTERCEPT AND ISOLATE FAILING BACKEND INSTANCES
-    if target_group_arn and asg_name:
+    # 2. AUTOMATED REMEDIATION (ONLY RUN ON ALARM STATE)
+    if new_state == 'ALARM' and target_group_arn and asg_name:
         try:
-            # Check target health
             health_response = elbv2.describe_target_health(TargetGroupArn=target_group_arn)
             unhealthy_nodes = [
                 target['Target']['Id'] for target in health_response.get('TargetHealthDescriptions', [])
@@ -70,14 +64,12 @@ def lambda_handler(event, context):
                 remediated_instance_id = unhealthy_nodes[0]
                 logger.warning(f"Isolating unhealthy node {remediated_instance_id} from target group {target_group_arn}")
                 
-                # Command ASG to release instance and immediately provision replacement node
                 autoscaling.detach_instances(
                     InstanceIds=[remediated_instance_id],
                     AutoScalingGroupName=asg_name,
                     ShouldDecrementDesiredCapacity=False
                 )
                 
-                # Tag instance for quarantine forensic reviews
                 ec2.create_tags(
                     Resources=[remediated_instance_id],
                     Tags=[
@@ -96,23 +88,28 @@ def lambda_handler(event, context):
         except Exception as err:
             remediation_summary = f"⚠️ *Automated Mitigation Warning:* Could not check target health: {str(err)}"
             logger.error(f"Error executing remediation loop: {str(err)}")
+    elif new_state == 'OK':
+        remediation_summary = "✅ *System Normalized:* Alarm condition has cleared."
 
-    # 4. Construct Rich Interactive Slack Card Payload Block
+    # 3. CONSTRUCT SLACK PAYLOAD
+    header_prefix = "🚨 ALARM:" if new_state == 'ALARM' else "✅ RECOVERED:"
+    
     slack_payload = {
         "blocks": [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"🚨 Incident Response Engine Actioned: {alarm_name}"
+                    "text": f"{header_prefix} {alarm_name}"
                 }
             },
             {
                 "type": "section",
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Incident ID:*\n{incident_id}"},
-                    {"type": "mrkdwn", "text": f"*Trigger Time:*\n{timestamp}"},
-                    {"type": "mrkdwn", "text": f"*Environment:*\n`{env_prefix}`"}
+                    {"type": "mrkdwn", "text": f"*Event Time:*\n{timestamp}"},
+                    {"type": "mrkdwn", "text": f"*Environment:*\n`{env_prefix}`"},
+                    {"type": "mrkdwn", "text": f"*State:*\n`{new_state}`"}
                 ]
             },
             {
@@ -127,13 +124,12 @@ def lambda_handler(event, context):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"🛠️ *Remediation Strategy Output:*\n{remediation_summary}"
+                    "text": f"🛠️ *Status & Remediation:* \n{remediation_summary}"
                 }
             }
         ]
     }
 
-    # Dynamically append interactive button if instance was quarantined
     if remediated_instance_id:
         slack_payload["blocks"].extend([
             {"type": "divider"},
@@ -149,21 +145,19 @@ def lambda_handler(event, context):
             }
         ])
 
-    # 5. Push compiled remediation status payload directly to Slack Webhook
-    if slack_webhook_url:
-        try:
-            encoded_data = json.dumps(slack_payload).encode('utf-8')
-            req = urllib.request.Request(
-                slack_webhook_url,
-                data=encoded_data,
-                headers={'Content-Type': 'application/json'}
-            )
-            with urllib.request.urlopen(req) as response:
-                logger.info(f"Slack webhook delivered successfully. Status code: {response.getcode()}")
-        except Exception as post_err:
-            logger.error(f"Failed to submit message to Slack channel endpoint: {str(post_err)}")
-    else:
-        logger.error("Skipped posting to Slack because SLACK_WEBHOOK_URL is missing!")
+    # 4. SEND SLACK WEBHOOK
+    try:
+        encoded_data = json.dumps(slack_payload).encode('utf-8')
+        req = urllib.request.Request(
+            slack_webhook_url,
+            data=encoded_data,
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req) as response:
+            logger.info(f"Slack webhook delivered successfully. Status code: {response.getcode()}")
+    except Exception as post_err:
+        logger.error(f"Failed to submit message to Slack channel endpoint: {str(post_err)}")
+        raise post_err
 
     return {
         'statusCode': 200,

@@ -15,7 +15,7 @@ resource "aws_sns_topic" "cloudwatch_alarms_topic" {
   )
 }
 
-# SNS Topic Policy allowing CloudWatch to publish alarms
+# SNS Topic Policy allowing CloudWatch to publish alarms securely
 resource "aws_sns_topic_policy" "default" {
   arn = aws_sns_topic.cloudwatch_alarms_topic.arn
 
@@ -30,6 +30,11 @@ resource "aws_sns_topic_policy" "default" {
         }
         Action   = "sns:Publish"
         Resource = aws_sns_topic.cloudwatch_alarms_topic.arn
+        Condition = {
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:cloudwatch:*:*:alarm:${var.env_prefix}-*"
+          }
+        }
       }
     ]
   })
@@ -77,7 +82,6 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
 }
 
 # --- HIGH DISK UTILIZATION ALARM ---
-# NOTE: Dimensions updated to match exact CWAgent payload (drop_device: true)
 resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
   count               = var.enable_disk_alarm ? 1 : 0
   alarm_name          = "${var.env_prefix}-ASG-High-Disk-Utilization"
@@ -178,7 +182,6 @@ resource "aws_iam_role" "lambda_remediation_role" {
   )
 }
 
-# Consolidated inline IAM policy for Lambda remediation actions
 resource "aws_iam_role_policy" "lambda_remediation_policy" {
   name = "${var.env_prefix}-lambda-remediation-policy"
   role = aws_iam_role.lambda_remediation_role.id
