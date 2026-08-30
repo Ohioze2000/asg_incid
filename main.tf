@@ -159,7 +159,8 @@ module "monitoring" {
   source             = "./modules/monitoring"
   env_prefix         = var.env_prefix
   asg_name           = module.webserver.asg_name
-  target_group_arn   = module.alb.target_group_arn
+  target_group_arn  = module.webserver.target_group_arn
+  #target_group_arn   = module.alb.target_group_arn
   slack_webhook_url  = var.slack_webhook_url
   alert_email        = var.alert_email
   app_log_group_name = module.logging.log_group_names["web_app"]
@@ -170,10 +171,10 @@ module "monitoring" {
 # ==============================================================================
 # 8. SSM
 # ==============================================================================
-module "ssm" {
-  source               = "./modules/ssm"
-  env_prefix           = var.env_prefix
-  ssm_parameter_name   = "/asg-webserver/cloudwatch-agent-config"
-  cw_agent_config_path = "${path.root}/amazon-cloudwatch-agent.json"
-  tags                 = var.tags
-}
+# module "ssm" {
+#   source               = "./modules/ssm"
+#   env_prefix           = var.env_prefix
+#   ssm_parameter_name   = "/asg-webserver/cloudwatch-agent-config"
+#   cw_agent_config_path = "${path.root}/amazon-cloudwatch-agent.json"
+#   tags                 = var.tags
+# }

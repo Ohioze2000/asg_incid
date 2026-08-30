@@ -48,7 +48,96 @@ resource "aws_sns_topic_subscription" "email_subscription" {
 }
 
 # ==============================================================================
-# 2. METRIC ALARMS
+# 2. SSM PARAMETER STORE (CLOUDWATCH AGENT CONFIGURATION)
+# ==============================================================================
+
+resource "aws_ssm_parameter" "cw_agent_config" {
+  name        = "/asg-webserver/cloudwatch-agent-config"
+  description = "CloudWatch Agent configuration JSON for EC2 instances in Auto Scaling Group"
+  type        = "String"
+  
+  value = jsonencode({
+    agent = {
+      metrics_collection_interval = 60,
+      run_as_user = "root"
+    }
+    metrics = {
+     namespace = "CWAgent"
+     append_dimensions = {
+       InstanceId = "$${aws:InstanceId}"
+       AutoScalingGroupName = "$${aws:AutoScalingGroupName}"
+     }
+     aggregation_dimensions = [
+      ["InstanceId"],
+      ["AutoScalingGroupName"],
+      ["AutoScalingGroupName", "path"]
+     ]
+     metrics_collected = {
+       cpu = {
+         metrics_collection_interval = 60,
+         resources = ["*"]
+         totalcpu = true
+       }
+       disk = {
+         metrics_collection_interval = 60,
+         resources = ["/"]
+         measurement = ["disk_used_percent", "inodes_free"]
+         ignore_file_system_types = ["sysfs", "devtmpfs", "tmpfs"]
+         drop_device = true
+       }
+       mem = {
+         metrics_collection_interval = 60,
+         measurement = ["mem_used_percent"]
+       }
+       swap = {
+         metrics_collection_interval = 60,
+         measurement = ["swap_used_percent"]
+       }
+     }
+   }
+   logs = {
+     logs_collected = {
+       files = {
+         collect_list = [
+          {
+            file_path = "/var/log/cloud-init-output.log",
+            log_group_name = "/ec2/cloud-init-output",
+            log_stream_name = "{instance_id}",
+            retention_in_days = var.log_retention_in_days
+          },
+          {
+            file_path = "/var/log/user-data.log",
+            log_group_name = "/ec2/user-data",
+            log_stream_name = "{instance_id}",
+            retention_in_days = var.log_retention_in_days
+          },
+          {
+            file_path = "/var/log/nginx/access.log",
+            log_group_name = "/ec2/nginx/access",
+            log_stream_name = "{instance_id}",
+            retention_in_days = var.log_retention_in_days
+          },
+          {
+            file_path = "/var/log/nginx/error.log",
+            log_group_name = "/ec2/nginx/error",
+            log_stream_name = "{instance_id}",
+            retention_in_days = var.log_retention_in_days
+          },
+          {
+            file_path = "/var/log/app/*.log",
+            log_group_name = "/ec2/app-logs",
+            log_stream_name = "{instance_id}",
+            retention_in_days = var.log_retention_in_days
+          }
+        ]
+      }
+    }
+  }
+})
+}
+
+# ==============================================================================
+# 3. METRIC ALARMS
 # ==============================================================================
 
 # --- HIGH CPU ALARM ---
@@ -98,6 +187,7 @@ resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
 
   dimensions = {
     path = "/"
+    AutoScalingGroupName = var.asg_name
   }
 
   alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]
@@ -112,7 +202,7 @@ resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
 }
 
 # ==============================================================================
-# 3. LOG ERROR MONITORING (FILTER + ALARM)
+# 4. LOG ERROR MONITORING (FILTER + ALARM)
 # ==============================================================================
 
 resource "aws_cloudwatch_log_metric_filter" "app_error_filter" {
@@ -155,7 +245,7 @@ resource "aws_cloudwatch_metric_alarm" "app_error_alarm" {
 }
 
 # ==============================================================================
-# 4. PROACTIVE AUTOMATED REMEDIATION ENGINE (LAMBDA & COMPONENT HOOKS)
+# 5. PROACTIVE AUTOMATED REMEDIATION ENGINE (LAMBDA & COMPONENT HOOKS)
 # ==============================================================================
 
 resource "aws_iam_role" "lambda_remediation_role" {
@@ -199,16 +289,16 @@ resource "aws_iam_role_policy" "lambda_remediation_policy" {
           "ec2:CreateTags"
         ]
         Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
       }
+      # {
+      #   Effect = "Allow"
+      #   Action = [
+      #     "logs:CreateLogGroup",
+      #     "logs:CreateLogStream",
+      #     "logs:PutLogEvents"
+      #   ]
+      #   Resource = "arn:aws:logs:*:*:*"
+      # }
     ]
   })
 }

@@ -129,7 +129,7 @@ resource "aws_launch_template" "web_server_lt" {
 # ==============================================================================
 
 resource "aws_autoscaling_group" "web_asg" {
-  name_prefix         = "${var.env_prefix}-web-asg-"
+  name                = "${var.env_prefix}-web-asg-"
   vpc_zone_identifier = var.private_subnet_ids
   desired_capacity    = var.desired_capacity
   max_size            = var.max_size

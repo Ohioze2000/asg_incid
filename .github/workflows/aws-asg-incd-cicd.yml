@@ -45,6 +45,13 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      # --- SYNTAX & FORMATTING QUALITY GATES ---
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Terraform Validate
+        run: terraform validate  
+
       # Speculative Plan triggers automatically in TFC during PRs
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
