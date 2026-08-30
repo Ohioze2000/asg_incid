@@ -97,7 +97,7 @@ module "alb" {
   env_prefix      = var.env_prefix
   vpc_id          = module.network.vpc_id
   subnet_ids      = module.network.public_subnet_ids
-  certificate_arn = module.ssl.certificate_arn 
+  certificate_arn = module.ssl.certificate_arn
   tags            = local.common_tags
 
   depends_on = [
@@ -156,10 +156,10 @@ module "logging" {
 # ==============================================================================
 
 module "monitoring" {
-  source             = "./modules/monitoring"
-  env_prefix         = var.env_prefix
-  asg_name           = module.webserver.asg_name
-  target_group_arn  = module.webserver.target_group_arn
+  source           = "./modules/monitoring"
+  env_prefix       = var.env_prefix
+  asg_name         = module.webserver.asg_name
+  target_group_arn = module.webserver.target_group_arn
   #target_group_arn   = module.alb.target_group_arn
   slack_webhook_url  = var.slack_webhook_url
   alert_email        = var.alert_email
