@@ -159,7 +159,7 @@ module "monitoring" {
   source           = "./modules/monitoring"
   env_prefix       = var.env_prefix
   asg_name         = module.webserver.asg_name
-  target_group_arn = module.webserver.target_group_arn
+  target_group_arn = module.alb.target_group_arn
   #target_group_arn   = module.alb.target_group_arn
   slack_webhook_url  = var.slack_webhook_url
   alert_email        = var.alert_email
