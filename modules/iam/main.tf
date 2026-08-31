@@ -37,6 +37,27 @@ resource "aws_iam_role_policy_attachment" "managed_policy_attachments" {
   policy_arn = each.value
 }
 
+# Inline policy allowing the EC2 instance to fetch the CloudWatch Agent configuration
+resource "aws_iam_role_policy" "ec2_read_cw_ssm_parameter" {
+  name = "${var.env_prefix}-ec2-read-cw-ssm-param"
+  role = aws_iam_role.ec2_ssm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowFetchCWAgentSSMConfig"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = "arn:aws:ssm:*:*:parameter/asg-webserver/cloudwatch-agent-config"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2_ssm_profile" {
   name = "${var.env_prefix}-ec2-ssm-profile"
   role = aws_iam_role.ec2_ssm_role.name

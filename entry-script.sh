@@ -107,8 +107,11 @@ if sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
     -c ssm:/asg-webserver/cloudwatch-agent-config \
     -s; then
     echo "[INFO] CloudWatch Agent configured and started successfully."
+    sudo systemctl enable amazon-cloudwatch-agent
 else
     echo "[ERROR] Failed to fetch CloudWatch Agent config from SSM Parameter Store!"
+    echo "[DIAGNOSTIC] Testing SSM permission via AWS CLI..."
+    aws ssm get-parameter --name "/asg-webserver/cloudwatch-agent-config" --region "${AWS_REGION}" || true
     exit 1
 fi
 
