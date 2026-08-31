@@ -69,28 +69,32 @@ resource "aws_ssm_parameter" "cw_agent_config" {
       }
       aggregation_dimensions = [
         ["InstanceId"],
-        ["AutoScalingGroupName"],
-        ["AutoScalingGroupName", "path"]
+        ["AutoScalingGroupName"]
       ]
       metrics_collected = {
         cpu = {
-          metrics_collection_interval = 60,
-          resources                   = ["*"]
-          totalcpu                    = true
+          metrics_collection_interval = 60
+          measurement = [
+            "cpu_usage_idle",
+            "cpu_usage_iowait",
+            "cpu_usage_user",
+            "cpu_usage_system"
+          ]
+          totalcpu = true
         }
         disk = {
-          metrics_collection_interval = 60,
+          metrics_collection_interval = 60
           resources                   = ["/"]
           measurement                 = ["disk_used_percent", "inodes_free"]
           ignore_file_system_types    = ["sysfs", "devtmpfs", "tmpfs"]
           drop_device                 = true
         }
         mem = {
-          metrics_collection_interval = 60,
+          metrics_collection_interval = 60
           measurement                 = ["mem_used_percent"]
         }
         swap = {
-          metrics_collection_interval = 60,
+          metrics_collection_interval = 60
           measurement                 = ["swap_used_percent"]
         }
       }
@@ -100,33 +104,33 @@ resource "aws_ssm_parameter" "cw_agent_config" {
         files = {
           collect_list = [
             {
-              file_path         = "/var/log/cloud-init-output.log",
-              log_group_name    = "/ec2/cloud-init-output",
-              log_stream_name   = "{instance_id}",
+              file_path         = "/var/log/cloud-init-output.log"
+              log_group_name    = "/ec2/cloud-init-output"
+              log_stream_name   = "{instance_id}"
               retention_in_days = var.log_retention_in_days
             },
             {
-              file_path         = "/var/log/user-data.log",
-              log_group_name    = "/ec2/user-data",
-              log_stream_name   = "{instance_id}",
+              file_path         = "/var/log/user-data.log"
+              log_group_name    = "/ec2/user-data"
+              log_stream_name   = "{instance_id}"
               retention_in_days = var.log_retention_in_days
             },
             {
-              file_path         = "/var/log/nginx/access.log",
-              log_group_name    = "/ec2/nginx/access",
-              log_stream_name   = "{instance_id}",
+              file_path         = "/var/log/nginx/access.log"
+              log_group_name    = "/ec2/nginx/access"
+              log_stream_name   = "{instance_id}"
               retention_in_days = var.log_retention_in_days
             },
             {
-              file_path         = "/var/log/nginx/error.log",
-              log_group_name    = "/ec2/nginx/error",
-              log_stream_name   = "{instance_id}",
+              file_path         = "/var/log/nginx/error.log"
+              log_group_name    = "/ec2/nginx/error"
+              log_stream_name   = "{instance_id}"
               retention_in_days = var.log_retention_in_days
             },
             {
-              file_path         = "/var/log/app/*.log",
-              log_group_name    = "/ec2/app-logs",
-              log_stream_name   = "{instance_id}",
+              file_path         = "/var/log/app/*.log"
+              log_group_name    = "/ec2/app-logs"
+              log_stream_name   = "{instance_id}"
               retention_in_days = var.log_retention_in_days
             }
           ]
@@ -135,7 +139,6 @@ resource "aws_ssm_parameter" "cw_agent_config" {
     }
   })
 }
-
 # ==============================================================================
 # 3. METRIC ALARMS
 # ==============================================================================

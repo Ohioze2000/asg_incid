@@ -91,7 +91,7 @@ resource "aws_launch_template" "web_server_lt" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_put_response_hop_limit = 2
   }
 
   user_data = filebase64("${path.root}/${var.user_data_path}")
