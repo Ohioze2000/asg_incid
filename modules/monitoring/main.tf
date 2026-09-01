@@ -69,7 +69,7 @@ resource "aws_ssm_parameter" "cw_agent_config" {
       }
       aggregation_dimensions = [
         ["InstanceId"],
-        ["AutoScalingGroupName"]
+        ["AutoScalingGroupName", "path", "fstype"]
       ]
       metrics_collected = {
         cpu = {
@@ -189,8 +189,9 @@ resource "aws_cloudwatch_metric_alarm" "high_disk_alarm" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    path                 = "/"
     AutoScalingGroupName = var.asg_name
+    path                 = "/"
+    fstype               = var.disk_fstype # Default variable e.g. "ext4" or "xfs"
   }
 
   alarm_actions = [aws_sns_topic.cloudwatch_alarms_topic.arn]

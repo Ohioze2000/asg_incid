@@ -66,19 +66,19 @@ variable "enable_disk_alarm" {
 variable "disk_alarm_threshold" {
   type        = number
   description = "Root disk usage threshold percentage to trigger alarm"
-  default     = 85
+  default     = 70
 }
 
 variable "disk_evaluation_periods" {
   type        = number
   description = "Evaluation periods for disk alarm"
-  default     = 2
+  default     = 1
 }
 
 variable "disk_alarm_period" {
   type        = number
   description = "Period in seconds for disk alarm evaluation"
-  default     = 300
+  default     = 120
 }
 
 # --- Log Error Alarm Variables ---
@@ -117,6 +117,12 @@ variable "log_retention_in_days" {
   type        = number
   description = "CloudWatch Log Group retention period in days for the remediation Lambda"
   default     = 14
+}
+
+variable "disk_fstype" {
+  type        = string
+  description = "Filesystem type of the root volume (e.g., ext4 for Ubuntu/Debian, xfs for Amazon Linux)"
+  default     = "ext4"
 }
 
 variable "tags" {
