@@ -26,11 +26,12 @@ resource "aws_iam_role" "ec2_ssm_role" {
   )
 }
 
-# Attach AWS-managed policies for Systems Manager (SSM) and CloudWatch Agent
+# Attach AWS-managed policies for Systems Manager (SSM), CloudWatch Agent, and CloudWatch Read-Only
 resource "aws_iam_role_policy_attachment" "managed_policy_attachments" {
   for_each = toset([
     "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-    "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+    "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+    "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess"
   ])
 
   role       = aws_iam_role.ec2_ssm_role.name
